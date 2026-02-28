@@ -51,42 +51,45 @@ export interface NodeInfo {
   isSelected: boolean;
 }
 
-/** Ancestor tree node — fans out upward (each person has 0-2 parents) */
+/**
+ * Ancestor tree node — each node is ONE person.
+ * father/mother branch upward to their respective parents.
+ */
 export interface AncestorNode {
   info: NodeInfo;
   father?: AncestorNode;
   mother?: AncestorNode;
 }
 
-/** Descendant tree node — fans out downward */
-export interface DescendantNode {
-  info: NodeInfo;
+/** A family unit in the descendant tree: person + spouse + their children */
+export interface DescendantFamily {
+  spouse?: NodeInfo;
   children: DescendantNode[];
 }
 
-/** Full hourglass data: ancestors above, descendants below, centered on selected person */
+/** Descendant tree node — each node is ONE person with their family units */
+export interface DescendantNode {
+  info: NodeInfo;
+  families: DescendantFamily[];
+}
+
+/** Full hourglass data */
 export interface HourglassData {
-  ancestors: AncestorNode; // root = selected person, branches up to parents/grandparents
-  descendants: DescendantNode; // root = selected person, branches down to children
+  ancestors: AncestorNode;
+  descendants: DescendantNode;
 }
 
 let nextId = 1;
 
-function makeNodeInfo(
+function makePersonInfo(
   handle: string,
   data: GrampsData,
-  selectedHandle: string,
-  spouseNames?: string[]
+  selectedHandle: string
 ): NodeInfo {
   const person = data.persons.get(handle)!;
-  const personName = getPersonName(person);
-  const name =
-    spouseNames && spouseNames.length > 0
-      ? `${personName} & ${spouseNames.join(", ")}`
-      : personName;
   return {
     id: nextId++,
-    name,
+    name: getPersonName(person),
     dates: formatDates(person, data),
     place: getBirthPlace(person, data),
     isSelected: handle === selectedHandle,
@@ -94,8 +97,8 @@ function makeNodeInfo(
 }
 
 /**
- * Build ancestor tree upward from a person. Each node has optional father/mother branches.
- * Couples are shown: if person has a spouse via parent family, both names appear.
+ * Build ancestor tree upward from a person.
+ * Each node is one person; father and mother are separate branches.
  */
 function buildAncestorTree(
   handle: string,
@@ -106,25 +109,18 @@ function buildAncestorTree(
 ): AncestorNode {
   const person = data.persons.get(handle);
   if (!person) {
-    return { info: { id: nextId++, name: "?", dates: "", place: "", isSelected: false } };
+    return {
+      info: {
+        id: nextId++,
+        name: "?",
+        dates: "",
+        place: "",
+        isSelected: false,
+      },
+    };
   }
 
-  // For the selected person (depth 0), show with spouse(s)
-  // For ancestors (depth > 0), show individual (spouse shown as sibling in same generation)
-  let info: NodeInfo;
-  if (depth === 0) {
-    const spouseNames: string[] = [];
-    for (const fh of person.family_list) {
-      const fam = data.families.get(fh);
-      if (!fam) continue;
-      const sh = fam.father_handle === handle ? fam.mother_handle : fam.father_handle;
-      const spouse = sh ? data.persons.get(sh) : null;
-      if (spouse) spouseNames.push(getPersonName(spouse));
-    }
-    info = makeNodeInfo(handle, data, selectedHandle, spouseNames);
-  } else {
-    info = makeNodeInfo(handle, data, selectedHandle);
-  }
+  const info = makePersonInfo(handle, data, selectedHandle);
 
   if (depth >= maxUp || !person.parent_family_list.length) {
     return { info };
@@ -136,7 +132,10 @@ function buildAncestorTree(
   let father: AncestorNode | undefined;
   let mother: AncestorNode | undefined;
 
-  if (parentFamily.father_handle && data.persons.get(parentFamily.father_handle)) {
+  if (
+    parentFamily.father_handle &&
+    data.persons.get(parentFamily.father_handle)
+  ) {
     father = buildAncestorTree(
       parentFamily.father_handle,
       data,
@@ -146,7 +145,10 @@ function buildAncestorTree(
     );
   }
 
-  if (parentFamily.mother_handle && data.persons.get(parentFamily.mother_handle)) {
+  if (
+    parentFamily.mother_handle &&
+    data.persons.get(parentFamily.mother_handle)
+  ) {
     mother = buildAncestorTree(
       parentFamily.mother_handle,
       data,
@@ -161,7 +163,7 @@ function buildAncestorTree(
 
 /**
  * Build descendant tree downward from a person.
- * Processes ALL families (handles multiple marriages). Shows couples.
+ * Each node is ONE person. Each family unit includes the spouse and children.
  */
 function buildDescendantTree(
   handle: string,
@@ -177,9 +179,7 @@ function buildDescendantTree(
   const person = data.persons.get(handle);
   if (!person) return null;
 
-  const allChildren: DescendantNode[] = [];
-  const spouseNames: string[] = [];
-  let isSelected = handle === selectedHandle;
+  const families: DescendantFamily[] = [];
 
   for (const familyHandle of person.family_list) {
     const family = data.families.get(familyHandle);
@@ -189,14 +189,14 @@ function buildDescendantTree(
       family.father_handle === handle
         ? family.mother_handle
         : family.father_handle;
-    const spouse = spouseHandle ? data.persons.get(spouseHandle) : null;
 
-    if (spouse) {
-      visited.add(spouseHandle!);
-      spouseNames.push(getPersonName(spouse));
-      if (spouseHandle === selectedHandle) isSelected = true;
+    let spouseInfo: NodeInfo | undefined;
+    if (spouseHandle && data.persons.get(spouseHandle)) {
+      visited.add(spouseHandle);
+      spouseInfo = makePersonInfo(spouseHandle, data, selectedHandle);
     }
 
+    const children: DescendantNode[] = [];
     for (const childRef of family.child_ref_list) {
       const childNode = buildDescendantTree(
         childRef.ref,
@@ -206,25 +206,15 @@ function buildDescendantTree(
         maxDepth,
         depth + 1
       );
-      if (childNode) allChildren.push(childNode);
+      if (childNode) children.push(childNode);
     }
+
+    families.push({ spouse: spouseInfo, children });
   }
 
-  const personName = getPersonName(person);
-  const name =
-    spouseNames.length > 0
-      ? `${personName} & ${spouseNames.join(", ")}`
-      : personName;
-
   return {
-    info: {
-      id: nextId++,
-      name,
-      dates: formatDates(person, data),
-      place: getBirthPlace(person, data),
-      isSelected,
-    },
-    children: allChildren,
+    info: makePersonInfo(handle, data, selectedHandle),
+    families,
   };
 }
 
@@ -238,13 +228,16 @@ export function buildHourglass(
 ): HourglassData {
   nextId = 1;
 
-  const ancestors = buildAncestorTree(selectedHandle, data, selectedHandle, maxUp);
+  const ancestors = buildAncestorTree(
+    selectedHandle,
+    data,
+    selectedHandle,
+    maxUp
+  );
 
-  // For descendants, skip the selected person's ancestors (they're shown above)
+  // Collect ancestor handles so descendants don't duplicate them
   const visited = new Set<string>();
-  // Mark ancestor handles as visited so they don't appear in descendant tree
   collectAncestorHandles(selectedHandle, data, maxUp, visited);
-  // But remove the selected person so we can build their descendants
   visited.delete(selectedHandle);
 
   const descendants = buildDescendantTree(
@@ -254,13 +247,13 @@ export function buildHourglass(
     visited
   ) ?? {
     info: ancestors.info,
-    children: [],
+    families: [],
   };
 
   return { ancestors, descendants };
 }
 
-/** Collect all person handles in the ancestor tree so descendants don't duplicate them */
+/** Collect all person handles in the ancestor tree */
 function collectAncestorHandles(
   handle: string,
   data: GrampsData,
