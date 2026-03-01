@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { applyWheelZoom } from "@arielladigitalconsulting/new-react-org-chart";
+import { applyWheelZoom } from "../utils/wheelZoom";
 import type { GrampsData } from "../types/gramps";
 import { buildHourglass } from "../utils/treeBuilder";
 import { layoutHourglass, NODE_W, NODE_H } from "../utils/hourglassLayout";
