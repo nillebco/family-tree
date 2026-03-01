@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildHourglass } from "./treeBuilder";
-import { layoutHourglass, NODE_W, NODE_H, H_GAP, V_GAP, siblingSlotCount } from "./hourglassLayout";
+import { layoutHourglass, NODE_W, NODE_H, V_GAP, siblingSlotCount } from "./hourglassLayout";
 import type {
   GrampsData,
   GrampsPerson,
@@ -123,6 +123,7 @@ function makeMockData(): { data: GrampsData; handles: Record<string, string> } {
     families,
     events: new Map(),
     places: new Map(),
+    rawOtherLines: [],
   };
 
   return { data, handles };
@@ -229,8 +230,6 @@ describe("buildHourglass", () => {
 });
 
 describe("layoutHourglass — sibling placement by gender", () => {
-  const nodeSpan = NODE_W + H_GAP;
-
   it("male ancestor: expanded siblings appear to the LEFT", () => {
     const { data, handles } = makeMockData();
     const hourglass = buildHourglass(handles.remo, data, 4);
@@ -464,10 +463,6 @@ describe("layoutHourglass — sibling placement by gender", () => {
     const remoNode = layout.nodes.find(
       (n) => n.info.handle === handles.remo
     )!;
-    const fatherNode = layout.nodes.find(
-      (n) => n.info.handle === handles.father
-    )!;
-
     // Remo's siblings (gen 0) — distance from Remo
     const remoSibDistances = hourglass.ancestors.siblings.map((s) => {
       const sibNode = layout.nodes.find((n) => n.info.handle === s.info.handle)!;
