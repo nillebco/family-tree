@@ -3,6 +3,7 @@ import { applyWheelZoom } from "@arielladigitalconsulting/new-react-org-chart";
 import type { GrampsData } from "../types/gramps";
 import { buildHourglass } from "../utils/treeBuilder";
 import { layoutHourglass, NODE_W, NODE_H } from "../utils/hourglassLayout";
+import { exportGrampsNdjson } from "../utils/grampsParser";
 import PersonDetailPanel from "./PersonDetailPanel";
 
 const MARGIN = 40;
@@ -20,12 +21,14 @@ interface PedigreeChartProps {
   data: GrampsData;
   selectedHandle: string;
   onBack: () => void;
+  onDataChanged: (data: GrampsData) => void;
 }
 
 export default function PedigreeChart({
   data,
   selectedHandle,
   onBack,
+  onDataChanged,
 }: PedigreeChartProps) {
   const includePrivate = useMemo(
     () => new URLSearchParams(window.location.search).has("private"),
@@ -60,6 +63,29 @@ export default function PedigreeChart({
       return next;
     });
   }, []);
+
+  const togglePrivate = useCallback(
+    (handle: string) => {
+      const person = data.persons.get(handle);
+      if (!person) return;
+      const updated = { ...person, private: !person.private };
+      const newPersons = new Map(data.persons);
+      newPersons.set(handle, updated);
+      onDataChanged({ ...data, persons: newPersons });
+    },
+    [data, onDataChanged]
+  );
+
+  const handleExport = useCallback(() => {
+    const ndjson = exportGrampsNdjson(data);
+    const blob = new Blob([ndjson], { type: "application/x-ndjson" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "gramps-export.ndjson";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [data]);
   const panRef = useRef<{
     startX: number;
     startY: number;
@@ -171,6 +197,7 @@ export default function PedigreeChart({
         >
           Reset view
         </button>
+        <button onClick={handleExport}>Export NDJSON</button>
       </div>
       <svg
         ref={svgRef}
@@ -376,6 +403,7 @@ export default function PedigreeChart({
           includePrivate={includePrivate}
           onClose={() => setDetailHandle(null)}
           onNavigate={(h) => setDetailHandle(h)}
+          onTogglePrivate={togglePrivate}
         />
       )}
     </div>

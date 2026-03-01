@@ -71,6 +71,8 @@ export interface GrampsData {
   families: Map<string, GrampsFamily>;
   events: Map<string, GrampsEvent>;
   places: Map<string, GrampsPlace>;
+  /** Raw NDJSON lines for objects we don't parse (kept for faithful re-export) */
+  rawOtherLines: string[];
 }
 
 // Gramps EventType values

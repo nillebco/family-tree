@@ -14,6 +14,7 @@ export function parseGrampsNdjson(
   const families = new Map<string, GrampsFamily>();
   const events = new Map<string, GrampsEvent>();
   const places = new Map<string, GrampsPlace>();
+  const rawOtherLines: string[] = [];
 
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
@@ -35,11 +36,35 @@ export function parseGrampsNdjson(
         case "Place":
           places.set(obj.handle, obj);
           break;
+        default:
+          rawOtherLines.push(trimmed);
+          break;
       }
     } catch {
       // skip unparseable lines
     }
   }
 
-  return { persons, families, events, places };
+  return { persons, families, events, places, rawOtherLines };
+}
+
+/** Serialize GrampsData back to NDJSON format */
+export function exportGrampsNdjson(data: GrampsData): string {
+  const lines: string[] = [];
+  for (const person of data.persons.values()) {
+    lines.push(JSON.stringify(person));
+  }
+  for (const family of data.families.values()) {
+    lines.push(JSON.stringify(family));
+  }
+  for (const event of data.events.values()) {
+    lines.push(JSON.stringify(event));
+  }
+  for (const place of data.places.values()) {
+    lines.push(JSON.stringify(place));
+  }
+  for (const line of data.rawOtherLines) {
+    lines.push(line);
+  }
+  return lines.join("\n") + "\n";
 }

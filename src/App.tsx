@@ -43,6 +43,9 @@ export default function App() {
           data={state.data}
           selectedHandle={state.selectedHandle}
           onBack={() => setState({ step: "pick", data: state.data })}
+          onDataChanged={(newData) =>
+            setState({ step: "chart", data: newData, selectedHandle: state.selectedHandle })
+          }
         />
       )}
     </div>

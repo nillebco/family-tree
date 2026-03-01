@@ -57,6 +57,7 @@ interface PersonDetailPanelProps {
   includePrivate: boolean;
   onClose: () => void;
   onNavigate: (handle: string) => void;
+  onTogglePrivate: (handle: string) => void;
 }
 
 function formatDate(date: { dateval: [number, number, number, boolean]; text: string } | undefined): string {
@@ -160,6 +161,7 @@ export default function PersonDetailPanel({
   includePrivate,
   onClose,
   onNavigate,
+  onTogglePrivate,
 }: PersonDetailPanelProps) {
   if (!isVisible(handle, data, includePrivate)) return null;
   const person = data.persons.get(handle)!;
@@ -223,9 +225,13 @@ export default function PersonDetailPanel({
           {name}
         </div>
         <div className="pdp-gramps-id">{person.gramps_id}</div>
-        {person.private && (
-          <span className="pdp-private-badge">Private</span>
-        )}
+        <button
+          className={`pdp-lock-btn ${person.private ? "pdp-lock-closed" : "pdp-lock-open"}`}
+          onClick={() => onTogglePrivate(handle)}
+          title={person.private ? "Private — click to make public" : "Public — click to make private"}
+        >
+          {person.private ? "\uD83D\uDD12" : "\uD83D\uDD13"}
+        </button>
       </div>
 
       {/* Vital events */}
