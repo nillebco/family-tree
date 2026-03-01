@@ -5,6 +5,7 @@ import {
   buildHourglass,
   type AncestorNode,
   type DescendantNode,
+  type DescendantFamily,
   type NodeInfo,
 } from "../utils/treeBuilder";
 
@@ -19,6 +20,7 @@ interface PlacedNode {
   info: NodeInfo;
   x: number;
   y: number;
+  hiddenSiblings?: number;
 }
 
 interface PlacedLink {
@@ -28,6 +30,66 @@ interface PlacedLink {
   toY: number;
   key: string;
   isMarriage?: boolean; // horizontal marriage line
+}
+
+// ── Sibling filtering for direct-line path ─────────────────────────
+
+/** Map from direct-line child handle → number of hidden siblings */
+type HiddenSiblingMap = Map<string, number>;
+
+/**
+ * Filter the descendant tree so that along the direct-line path,
+ * only the direct-line child is shown (siblings hidden) unless expanded.
+ * Below the selected person, everything is shown normally.
+ */
+function filterDescendantTree(
+  node: DescendantNode,
+  directLine: Set<string>,
+  expandedSiblings: Set<string>,
+  selectedHandle: string,
+  hiddenMap: HiddenSiblingMap
+): DescendantNode {
+  // If this node IS the selected person or is below the selected person,
+  // show everything normally (no filtering)
+  if (node.info.handle === selectedHandle) {
+    return node;
+  }
+
+  const filteredFamilies: DescendantFamily[] = [];
+
+  for (const fam of node.families) {
+    // Find the direct-line child in this family
+    const directChild = fam.children.find((c) => directLine.has(c.info.handle));
+
+    if (!directChild) {
+      // No direct-line child in this family — show all children as-is
+      filteredFamilies.push(fam);
+      continue;
+    }
+
+    // This family has a direct-line child
+    const isExpanded = expandedSiblings.has(directChild.info.handle);
+    const siblingCount = fam.children.length - 1;
+
+    if (isExpanded || siblingCount === 0) {
+      // Expanded or no siblings: show all children, but recurse to filter deeper
+      const filteredChildren = fam.children.map((c) =>
+        directLine.has(c.info.handle)
+          ? filterDescendantTree(c, directLine, expandedSiblings, selectedHandle, hiddenMap)
+          : c
+      );
+      filteredFamilies.push({ ...fam, children: filteredChildren });
+    } else {
+      // Collapsed: keep only the direct-line child, record hidden count
+      hiddenMap.set(directChild.info.handle, siblingCount);
+      const filteredChild = filterDescendantTree(
+        directChild, directLine, expandedSiblings, selectedHandle, hiddenMap
+      );
+      filteredFamilies.push({ ...fam, children: [filteredChild] });
+    }
+  }
+
+  return { ...node, families: filteredFamilies };
 }
 
 // ── Ancestor layout (fans out UPWARD) ──────────────────────────────
@@ -433,6 +495,7 @@ export default function PedigreeChart({
   const [zoom, setZoom] = useState(1);
   const [maxUp, setMaxUp] = useState(4);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [expandedSiblings, setExpandedSiblings] = useState<Set<string>>(new Set());
   const panRef = useRef<{
     startX: number;
     startY: number;
@@ -445,10 +508,45 @@ export default function PedigreeChart({
     [selectedHandle, data, maxUp]
   );
 
+  const { filteredDescendants, hiddenSiblingMap } = useMemo(() => {
+    const hiddenMap: HiddenSiblingMap = new Map();
+    const filtered = filterDescendantTree(
+      hourglass.descendants,
+      hourglass.directLine,
+      expandedSiblings,
+      selectedHandle,
+      hiddenMap
+    );
+    return { filteredDescendants: filtered, hiddenSiblingMap: hiddenMap };
+  }, [hourglass, expandedSiblings, selectedHandle]);
+
   const { nodes, links, width: contentW, height: contentH } = useMemo(
-    () => layoutHourglass(hourglass.ancestors, hourglass.descendants),
-    [hourglass]
+    () => layoutHourglass(hourglass.ancestors, filteredDescendants),
+    [hourglass.ancestors, filteredDescendants]
   );
+
+  // Enrich nodes with hidden sibling counts
+  const enrichedNodes = useMemo(() => {
+    return nodes.map((n) => {
+      const count = hiddenSiblingMap.get(n.info.handle);
+      if (count !== undefined) {
+        return { ...n, hiddenSiblings: count };
+      }
+      return n;
+    });
+  }, [nodes, hiddenSiblingMap]);
+
+  const toggleSiblings = useCallback((handle: string) => {
+    setExpandedSiblings((prev) => {
+      const next = new Set(prev);
+      if (next.has(handle)) {
+        next.delete(handle);
+      } else {
+        next.add(handle);
+      }
+      return next;
+    });
+  }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -574,7 +672,7 @@ export default function PedigreeChart({
             );
           })}
           {/* Nodes */}
-          {nodes.map((n) => {
+          {enrichedNodes.map((n) => {
             const p = n.info;
             const isSelected = p.isSelected;
             const bgFill = isSelected
@@ -587,6 +685,16 @@ export default function PedigreeChart({
               : p.isPrivate
                 ? "#b0b0b0"
                 : "#c9c9c9";
+
+            // Expander arrow for hidden siblings
+            const hasHidden = n.hiddenSiblings !== undefined && n.hiddenSiblings > 0;
+            const isExpanded = expandedSiblings.has(p.handle);
+            // Men/unknown: arrow left; Women: arrow right
+            const arrowOnLeft = p.gender !== 0; // 1=male, 2=unknown → left
+            const arrowSize = 8;
+            const arrowX = arrowOnLeft ? -20 : NODE_W + 12;
+            const arrowY = NODE_H / 2;
+
             return (
               <g key={p.id} transform={`translate(${n.x},${n.y})`}>
                 <rect
@@ -643,6 +751,65 @@ export default function PedigreeChart({
                   >
                     {truncate(p.place, NODE_W, 10)}
                   </text>
+                )}
+                {/* Sibling expander arrow */}
+                {(hasHidden || isExpanded) && (
+                  <g
+                    style={{ cursor: "pointer" }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSiblings(p.handle);
+                    }}
+                  >
+                    {/* Hit area */}
+                    <rect
+                      x={arrowX - 12}
+                      y={arrowY - 16}
+                      width={32}
+                      height={32}
+                      fill="transparent"
+                    />
+                    {/* Arrow triangle: collapsed = outward (◀ left, ▶ right), expanded = inward */}
+                    <polygon
+                      points={
+                        isExpanded
+                          ? // Expanded: arrow points inward (▶ for left-side, ◀ for right-side)
+                            arrowOnLeft
+                            ? `${arrowX + arrowSize},${arrowY} ${arrowX - arrowSize},${arrowY - arrowSize} ${arrowX - arrowSize},${arrowY + arrowSize}`
+                            : `${arrowX - arrowSize},${arrowY} ${arrowX + arrowSize},${arrowY - arrowSize} ${arrowX + arrowSize},${arrowY + arrowSize}`
+                          : // Collapsed: arrow points outward (◀ for left-side, ▶ for right-side)
+                            arrowOnLeft
+                            ? `${arrowX - arrowSize},${arrowY} ${arrowX + arrowSize},${arrowY - arrowSize} ${arrowX + arrowSize},${arrowY + arrowSize}`
+                            : `${arrowX + arrowSize},${arrowY} ${arrowX - arrowSize},${arrowY - arrowSize} ${arrowX - arrowSize},${arrowY + arrowSize}`
+                      }
+                      fill="#4285f4"
+                    />
+                    {/* Sibling count badge */}
+                    {hasHidden && !isExpanded && (
+                      <>
+                        <circle
+                          cx={arrowX}
+                          cy={arrowY - 14}
+                          r={9}
+                          fill="#e57373"
+                        />
+                        <text
+                          x={arrowX}
+                          y={arrowY - 14}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fill="#fff"
+                          fontSize={9}
+                          fontWeight={700}
+                        >
+                          +{n.hiddenSiblings}
+                        </text>
+                      </>
+                    )}
+                  </g>
                 )}
               </g>
             );

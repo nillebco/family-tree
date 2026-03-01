@@ -45,6 +45,8 @@ export function getBirthPlace(person: GrampsPerson, data: GrampsData): string {
 /** Info for rendering a single node */
 export interface NodeInfo {
   id: number;
+  handle: string;
+  gender: number; // 0=female, 1=male, 2=unknown
   name: string;
   dates: string;
   place: string;
@@ -78,6 +80,7 @@ export interface DescendantNode {
 export interface HourglassData {
   ancestors: AncestorNode;
   descendants: DescendantNode;
+  directLine: Set<string>;
 }
 
 let nextId = 1;
@@ -90,6 +93,8 @@ function makePersonInfo(
   const person = data.persons.get(handle)!;
   return {
     id: nextId++,
+    handle,
+    gender: person.gender,
     name: getPersonName(person),
     dates: formatDates(person, data),
     place: getBirthPlace(person, data),
@@ -114,6 +119,8 @@ function buildAncestorTree(
     return {
       info: {
         id: nextId++,
+        handle: "",
+        gender: 2,
         name: "?",
         dates: "",
         place: "",
@@ -222,6 +229,50 @@ function buildDescendantTree(
 }
 
 /**
+ * Find the direct-line path from rootHandle down to selectedHandle
+ * via DFS through family_list → child_ref_list.
+ * Returns a Set of all person handles on this path.
+ */
+export function findDirectLinePath(
+  rootHandle: string,
+  selectedHandle: string,
+  data: GrampsData
+): Set<string> {
+  const path = new Set<string>();
+  if (rootHandle === selectedHandle) {
+    path.add(rootHandle);
+    return path;
+  }
+
+  function dfs(handle: string, visited: Set<string>): boolean {
+    if (handle === selectedHandle) return true;
+    if (visited.has(handle)) return false;
+    visited.add(handle);
+
+    const person = data.persons.get(handle);
+    if (!person) return false;
+
+    for (const familyHandle of person.family_list) {
+      const family = data.families.get(familyHandle);
+      if (!family) continue;
+      for (const childRef of family.child_ref_list) {
+        if (dfs(childRef.ref, visited)) {
+          path.add(childRef.ref);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  const visited = new Set<string>();
+  if (dfs(rootHandle, visited)) {
+    path.add(rootHandle);
+  }
+  return path;
+}
+
+/**
  * Build hourglass data centered on selected person.
  *
  * The ancestor tree starts from the selected person's father (of their
@@ -238,25 +289,34 @@ export function buildHourglass(
 ): HourglassData {
   nextId = 1;
 
-  const selectedPerson = data.persons.get(selectedHandle);
-
-  // Try to use the parent family so siblings are visible
+  // Walk upward from selected person as far as possible (up to maxUp levels)
+  // so that siblings at every generation on the path are available in the
+  // descendant tree.
   let rootHandle = selectedHandle;
-  if (selectedPerson?.parent_family_list.length) {
-    const parentFam = data.families.get(selectedPerson.parent_family_list[0]);
-    if (parentFam) {
-      rootHandle =
-        parentFam.father_handle || parentFam.mother_handle || selectedHandle;
+  let stepsUp = 0;
+  {
+    let currentHandle = selectedHandle;
+    while (stepsUp < maxUp) {
+      const person = data.persons.get(currentHandle);
+      if (!person || !person.parent_family_list.length) break;
+      const parentFam = data.families.get(person.parent_family_list[0]);
+      if (!parentFam) break;
+      const parentHandle =
+        parentFam.father_handle || parentFam.mother_handle;
+      if (!parentHandle || !data.persons.get(parentHandle)) break;
+      currentHandle = parentHandle;
+      stepsUp++;
     }
+    rootHandle = currentHandle;
   }
 
-  // Ancestor tree from the root person (the parent)
-  // We already "used" one generation to go from selected → parent, so subtract 1
+  // Ancestor tree from the root person
+  // We already "used" stepsUp generations walking up, so subtract those
   const ancestors = buildAncestorTree(
     rootHandle,
     data,
     selectedHandle,
-    Math.max(0, maxUp - 1)
+    Math.max(0, maxUp - stepsUp)
   );
 
   // Collect ancestor handles so descendants don't duplicate them
@@ -274,7 +334,9 @@ export function buildHourglass(
     families: [],
   };
 
-  return { ancestors, descendants };
+  const directLine = findDirectLinePath(rootHandle, selectedHandle, data);
+
+  return { ancestors, descendants, directLine };
 }
 
 /** Collect all person handles in the ancestor tree */
