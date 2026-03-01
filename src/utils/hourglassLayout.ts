@@ -151,7 +151,8 @@ function layoutSiblingFamily(
 export function ancestorLeafCount(
   node: AncestorNode,
   expandedSiblings: Set<string>,
-  expandedSiblingChildren: Set<string> = new Set()
+  expandedSiblingChildren: Set<string> = new Set(),
+  descendantExtraSlots: number = 0
 ): number {
   const expanded = expandedSiblings.has(node.info.handle);
   let siblingSlots = 0;
@@ -161,14 +162,14 @@ export function ancestorLeafCount(
     }
   }
 
-  if (!node.father && !node.mother) return 1 + siblingSlots;
+  if (!node.father && !node.mother) return 1 + siblingSlots + descendantExtraSlots;
 
   let parentCount = 0;
   if (node.father)
-    parentCount += ancestorLeafCount(node.father, expandedSiblings, expandedSiblingChildren);
+    parentCount += ancestorLeafCount(node.father, expandedSiblings, expandedSiblingChildren, 0);
   if (node.mother)
-    parentCount += ancestorLeafCount(node.mother, expandedSiblings, expandedSiblingChildren);
-  return parentCount + siblingSlots;
+    parentCount += ancestorLeafCount(node.mother, expandedSiblings, expandedSiblingChildren, 0);
+  return parentCount + siblingSlots + descendantExtraSlots;
 }
 
 export function ancestorDepth(node: AncestorNode): number {
@@ -187,7 +188,8 @@ export function layoutAncestors(
   links: PlacedLink[],
   expandedSiblings: Set<string>,
   cumulativeSibOffset: number = 0,
-  expandedSiblingChildren: Set<string> = new Set()
+  expandedSiblingChildren: Set<string> = new Set(),
+  descendantExtraSlots: number = 0
 ): { x: number; width: number } {
   const nodeSpan = NODE_W + H_GAP;
   const y = baselineY - generation * (NODE_H + V_GAP);
@@ -210,7 +212,7 @@ export function layoutAncestors(
     let x: number;
 
     if (expanded && isMale) {
-      x = leftEdge + siblingSlots * nodeSpan;
+      x = leftEdge + (siblingSlots + descendantExtraSlots) * nodeSpan;
       let cursor = leftEdge;
       for (const sib of node.siblings) {
         const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
@@ -225,7 +227,7 @@ export function layoutAncestors(
     } else {
       x = leftEdge;
       if (expanded) {
-        let cursor = leftEdge + nodeSpan;
+        let cursor = leftEdge + (1 + descendantExtraSlots) * nodeSpan;
         for (const sib of node.siblings) {
           const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
           const sx = cursor;
@@ -240,7 +242,7 @@ export function layoutAncestors(
     }
 
     nodes.push({ info: node.info, x, y, siblingCount: node.siblings.length });
-    return { x, width: (1 + siblingSlots) * nodeSpan };
+    return { x, width: (1 + siblingSlots + descendantExtraSlots) * nodeSpan };
   }
 
   // ── Node with parents ──
@@ -279,7 +281,7 @@ export function layoutAncestors(
   const firstParentX = parentPositions[0].x;
   const lastParentX = parentPositions[parentPositions.length - 1].x;
   const x = (firstParentX + lastParentX) / 2;
-  const totalWidth = cursor - leftEdge + (!siblingsOnLeft && expanded ? siblingSlots * nodeSpan : 0);
+  const totalWidth = cursor - leftEdge + (!siblingsOnLeft && expanded ? (siblingSlots + descendantExtraSlots) * nodeSpan : descendantExtraSlots * nodeSpan);
 
   nodes.push({ info: node.info, x, y, siblingCount: node.siblings.length });
 
@@ -291,7 +293,7 @@ export function layoutAncestors(
       let sibCursor = 0;
       for (const sib of node.siblings) {
         const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
-        const sx = x - (cumulativeSibOffset + sibCursor + slotWidth) * nodeSpan;
+        const sx = x - (cumulativeSibOffset + descendantExtraSlots + sibCursor + slotWidth) * nodeSpan;
         const directChildren = siblingDirectChildCount(sib);
         nodes.push({ info: sib.info, x: sx, y, childCount: directChildren || undefined });
         if (expandedSiblingChildren.has(sib.info.handle)) {
@@ -315,7 +317,7 @@ export function layoutAncestors(
       let sibCursor = 0;
       for (const sib of node.siblings) {
         const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
-        const sx = x + (cumulativeSibOffset + sibCursor + 1) * nodeSpan;
+        const sx = x + (cumulativeSibOffset + descendantExtraSlots + sibCursor + 1) * nodeSpan;
         const directChildren = siblingDirectChildCount(sib);
         nodes.push({ info: sib.info, x: sx, y, childCount: directChildren || undefined });
         if (expandedSiblingChildren.has(sib.info.handle)) {
@@ -554,8 +556,34 @@ export function layoutHourglass(
   const links: PlacedLink[] = [];
 
   const aDepth = ancestorDepth(ancestors);
-  const aLeaves = ancestorLeafCount(ancestors, expandedSiblings, expandedSiblingChildren);
   const sdLeaves = Math.max(descendantLeafCount(selectedDescendants), 1);
+
+  // Pre-compute descendant extent to avoid sibling/descendant overlap
+  let descendantExtraSlots = 0;
+  const hasExpandedSiblings =
+    expandedSiblings.has(ancestors.info.handle) && ancestors.siblings.length > 0;
+  if (hasExpandedSiblings && selectedDescendants.families.length > 0) {
+    const preNodes: PlacedNode[] = [];
+    const preLinks: PlacedLink[] = [];
+    const prePos = layoutDescendants(
+      selectedDescendants, 0, 0, 0, preNodes, preLinks, true
+    );
+    const isMale = ancestors.info.gender === 1;
+    if (isMale) {
+      // Siblings go LEFT; descendants extend LEFT by prePos.x pixels
+      descendantExtraSlots = Math.max(0, Math.ceil(prePos.x / nodeSpan));
+    } else {
+      // Siblings go RIGHT; descendants extend RIGHT
+      let maxX = 0;
+      for (const n of preNodes) maxX = Math.max(maxX, n.x + NODE_W);
+      const rightExtent = Math.max(0, maxX - prePos.x - NODE_W);
+      descendantExtraSlots = Math.max(0, Math.ceil(rightExtent / nodeSpan));
+    }
+  }
+
+  const aLeaves = ancestorLeafCount(
+    ancestors, expandedSiblings, expandedSiblingChildren, descendantExtraSlots
+  );
 
   const totalLeaves = Math.max(aLeaves, sdLeaves);
   const totalWidth = totalLeaves * nodeSpan;
@@ -574,7 +602,8 @@ export function layoutHourglass(
     links,
     expandedSiblings,
     0,
-    expandedSiblingChildren
+    expandedSiblingChildren,
+    descendantExtraSlots
   );
 
   if (selectedDescendants.families.length > 0) {
