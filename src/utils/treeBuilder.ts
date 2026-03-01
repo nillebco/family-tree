@@ -49,6 +49,7 @@ export interface NodeInfo {
   dates: string;
   place: string;
   isSelected: boolean;
+  isPrivate: boolean;
 }
 
 /**
@@ -93,6 +94,7 @@ function makePersonInfo(
     dates: formatDates(person, data),
     place: getBirthPlace(person, data),
     isSelected: handle === selectedHandle,
+    isPrivate: person.private,
   };
 }
 
@@ -116,6 +118,7 @@ function buildAncestorTree(
         dates: "",
         place: "",
         isSelected: false,
+        isPrivate: false,
       },
     };
   }
@@ -220,6 +223,13 @@ function buildDescendantTree(
 
 /**
  * Build hourglass data centered on selected person.
+ *
+ * The ancestor tree starts from the selected person's father (of their
+ * parent family).  The descendant tree starts from that same father,
+ * so all siblings (children of the parent family) are visible.
+ *
+ * If the person has no known parent family we fall back to showing
+ * just the selected person as root.
  */
 export function buildHourglass(
   selectedHandle: string,
@@ -228,20 +238,34 @@ export function buildHourglass(
 ): HourglassData {
   nextId = 1;
 
+  const selectedPerson = data.persons.get(selectedHandle);
+
+  // Try to use the parent family so siblings are visible
+  let rootHandle = selectedHandle;
+  if (selectedPerson?.parent_family_list.length) {
+    const parentFam = data.families.get(selectedPerson.parent_family_list[0]);
+    if (parentFam) {
+      rootHandle =
+        parentFam.father_handle || parentFam.mother_handle || selectedHandle;
+    }
+  }
+
+  // Ancestor tree from the root person (the parent)
+  // We already "used" one generation to go from selected → parent, so subtract 1
   const ancestors = buildAncestorTree(
-    selectedHandle,
+    rootHandle,
     data,
     selectedHandle,
-    maxUp
+    Math.max(0, maxUp - 1)
   );
 
   // Collect ancestor handles so descendants don't duplicate them
   const visited = new Set<string>();
-  collectAncestorHandles(selectedHandle, data, maxUp, visited);
-  visited.delete(selectedHandle);
+  collectAncestorHandles(rootHandle, data, Math.max(0, maxUp - 1), visited);
+  visited.delete(rootHandle);
 
   const descendants = buildDescendantTree(
-    selectedHandle,
+    rootHandle,
     data,
     selectedHandle,
     visited

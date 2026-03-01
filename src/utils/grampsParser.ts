@@ -6,7 +6,10 @@ import type {
   GrampsPlace,
 } from "../types/gramps";
 
-export function parseGrampsNdjson(text: string): GrampsData {
+export function parseGrampsNdjson(
+  text: string,
+  includePrivate: boolean = false
+): GrampsData {
   const persons = new Map<string, GrampsPerson>();
   const families = new Map<string, GrampsFamily>();
   const events = new Map<string, GrampsEvent>();
@@ -18,6 +21,7 @@ export function parseGrampsNdjson(text: string): GrampsData {
 
     try {
       const obj = JSON.parse(trimmed);
+      if (!includePrivate && obj.private) continue;
       switch (obj._class) {
         case "Person":
           persons.set(obj.handle, obj);

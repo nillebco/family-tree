@@ -14,7 +14,8 @@ export default function FileLoader({ onDataLoaded }: FileLoaderProps) {
       const reader = new FileReader();
       reader.onload = () => {
         const text = reader.result as string;
-        const data = parseGrampsNdjson(text);
+        const includePrivate = new URLSearchParams(window.location.search).has("private");
+        const data = parseGrampsNdjson(text, includePrivate);
         onDataLoaded(data);
       };
       reader.readAsText(file);

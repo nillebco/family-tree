@@ -26,6 +26,7 @@ export interface GrampsPerson {
   _class: "Person";
   handle: string;
   gramps_id: string;
+  private: boolean;
   gender: number; // 0=female, 1=male, 2=unknown
   primary_name: GrampsName;
   event_ref_list: GrampsEventRef[];

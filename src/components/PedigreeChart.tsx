@@ -484,19 +484,23 @@ export default function PedigreeChart({
     panRef.current = null;
   }, []);
 
-  const svgW = Math.max(contentW + MARGIN * 2, window.innerWidth);
-  const svgH = Math.max(contentH + MARGIN * 2, window.innerHeight - 60);
+  // SVG always fills the viewport; content is scaled to fit inside
+  const svgW = window.innerWidth;
+  const svgH = window.innerHeight - 60;
+
+  const availW = svgW - MARGIN * 2;
+  const availH = svgH - MARGIN * 2;
 
   const fitScale = Math.min(
-    (svgW - MARGIN * 2) / Math.max(contentW, 1),
-    (svgH - MARGIN * 2) / Math.max(contentH, 1)
+    availW / Math.max(contentW, 1),
+    availH / Math.max(contentH, 1)
   );
   const scale = fitScale * zoom;
 
   const offsetX =
-    MARGIN + ((svgW - MARGIN * 2) - contentW * scale) / 2 + pan.x;
+    MARGIN + (availW - contentW * scale) / 2 + pan.x;
   const offsetY =
-    MARGIN + ((svgH - MARGIN * 2) - contentH * scale) / 2 + pan.y;
+    MARGIN + (availH - contentH * scale) / 2 + pan.y;
 
   return (
     <div className="pedigree-chart">
@@ -573,21 +577,31 @@ export default function PedigreeChart({
           {nodes.map((n) => {
             const p = n.info;
             const isSelected = p.isSelected;
+            const bgFill = isSelected
+              ? "#e8f0fe"
+              : p.isPrivate
+                ? "#f0f0f0"
+                : "#fff";
+            const strokeColor = isSelected
+              ? "#4285f4"
+              : p.isPrivate
+                ? "#b0b0b0"
+                : "#c9c9c9";
             return (
               <g key={p.id} transform={`translate(${n.x},${n.y})`}>
                 <rect
                   width={NODE_W}
                   height={NODE_H}
                   rx={8}
-                  fill={isSelected ? "#e8f0fe" : "#fff"}
-                  stroke={isSelected ? "#4285f4" : "#c9c9c9"}
+                  fill={bgFill}
+                  stroke={strokeColor}
                   strokeWidth={isSelected ? 2 : 1}
                 />
                 <circle
                   cx={NODE_W / 2}
                   cy={22}
                   r={16}
-                  fill={isSelected ? "#4285f4" : "#94a3b8"}
+                  fill={isSelected ? "#4285f4" : p.isPrivate ? "#b0b0b0" : "#94a3b8"}
                 />
                 <text
                   x={NODE_W / 2}
