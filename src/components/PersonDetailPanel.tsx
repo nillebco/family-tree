@@ -2,6 +2,55 @@ import type { GrampsData, GrampsPerson } from "../types/gramps";
 import { EVENT_BIRTH, EVENT_DEATH } from "../types/gramps";
 import { getPersonName } from "../utils/treeBuilder";
 
+/** Gramps EventType numeric values → human-readable labels */
+const EVENT_TYPE_LABELS: Record<number, string> = {
+  1: "Marriage",
+  2: "Marriage Settlement",
+  3: "Marriage License",
+  4: "Marriage Contract",
+  5: "Death",
+  6: "Divorce",
+  7: "Divorce Filing",
+  8: "Annulment",
+  9: "Alternate Marriage",
+  10: "Engagement",
+  11: "Marriage Banns",
+  12: "Birth",
+  13: "Burial",
+  14: "Cremation",
+  15: "Baptism",
+  16: "Christening",
+  17: "Confirmation",
+  18: "First Communion",
+  19: "Cause Of Death",
+  20: "Emigration",
+  21: "Immigration",
+  22: "Census",
+  23: "Ordination",
+  24: "Probate",
+  25: "Will",
+  26: "Graduation",
+  27: "Retirement",
+  28: "Adoption",
+  29: "Naturalization",
+  30: "Degree",
+  31: "Education",
+  32: "Elected",
+  33: "Medical Information",
+  34: "Military Service",
+  35: "Nobility Title",
+  36: "Number of Marriages",
+  37: "Occupation",
+  38: "Property",
+  39: "Religion",
+  40: "Residence",
+  41: "Adult Christening",
+  42: "Bar Mitzvah",
+  43: "Bat Mitzvah",
+  44: "Blessing",
+  45: "Stillbirth",
+};
+
 interface PersonDetailPanelProps {
   handle: string;
   data: GrampsData;
@@ -37,17 +86,38 @@ interface ResolvedEvent {
 
 function resolveEvents(person: GrampsPerson, data: GrampsData): ResolvedEvent[] {
   const events: ResolvedEvent[] = [];
+  const seen = new Set<string>();
   for (const ref of person.event_ref_list) {
     const event = data.events.get(ref.ref);
     if (!event) continue;
+    seen.add(ref.ref);
     const place = event.place ? data.places.get(event.place)?.title || "" : "";
     events.push({
-      typeString: event.type.string,
+      typeString: event.type.string || EVENT_TYPE_LABELS[event.type.value] || `Event #${event.type.value}`,
       typeValue: event.type.value,
       date: formatDate(event.date),
       place,
       description: event.description,
     });
+  }
+  // Also include events from families (e.g. marriage events)
+  for (const familyHandle of person.family_list) {
+    const family = data.families.get(familyHandle);
+    if (!family) continue;
+    for (const ref of family.event_ref_list) {
+      if (seen.has(ref.ref)) continue;
+      const event = data.events.get(ref.ref);
+      if (!event) continue;
+      seen.add(ref.ref);
+      const place = event.place ? data.places.get(event.place)?.title || "" : "";
+      events.push({
+        typeString: event.type.string || EVENT_TYPE_LABELS[event.type.value] || `Event #${event.type.value}`,
+        typeValue: event.type.value,
+        date: formatDate(event.date),
+        place,
+        description: event.description,
+      });
+    }
   }
   return events;
 }

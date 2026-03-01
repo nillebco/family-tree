@@ -54,6 +54,16 @@ export interface NodeInfo {
   isPrivate: boolean;
 }
 
+export interface SiblingNode {
+  info: NodeInfo;
+  families: SiblingFamily[];
+}
+
+export interface SiblingFamily {
+  spouse?: NodeInfo;
+  children: SiblingNode[]; // each child is a SiblingNode so it can be expanded further
+}
+
 /**
  * Ancestor tree node — each node is ONE person.
  * father/mother branch upward to their respective parents.
@@ -62,7 +72,7 @@ export interface AncestorNode {
   info: NodeInfo;
   father?: AncestorNode;
   mother?: AncestorNode;
-  siblings: NodeInfo[];
+  siblings: SiblingNode[];
 }
 
 /** A family unit in the descendant tree: person + spouse + their children */
@@ -104,6 +114,51 @@ function makePersonInfo(
 }
 
 /**
+ * Build a SiblingNode for a person handle — resolves their families
+ * (spouse + children recursively as SiblingNode).
+ */
+function buildSiblingNode(
+  handle: string,
+  data: GrampsData,
+  selectedHandle: string,
+  visited: Set<string> = new Set()
+): SiblingNode {
+  const info = makePersonInfo(handle, data, selectedHandle);
+
+  if (visited.has(handle)) return { info, families: [] };
+  visited.add(handle);
+
+  const person = data.persons.get(handle)!;
+  const families: SiblingFamily[] = [];
+
+  for (const familyHandle of person.family_list) {
+    const family = data.families.get(familyHandle);
+    if (!family) continue;
+
+    const spouseHandle =
+      family.father_handle === handle
+        ? family.mother_handle
+        : family.father_handle;
+
+    let spouse: NodeInfo | undefined;
+    if (spouseHandle && data.persons.get(spouseHandle)) {
+      spouse = makePersonInfo(spouseHandle, data, selectedHandle);
+    }
+
+    const children: SiblingNode[] = [];
+    for (const childRef of family.child_ref_list) {
+      if (data.persons.get(childRef.ref)) {
+        children.push(buildSiblingNode(childRef.ref, data, selectedHandle, visited));
+      }
+    }
+
+    families.push({ spouse, children });
+  }
+
+  return { info, families };
+}
+
+/**
  * Build ancestor tree upward from a person.
  * Each node is one person; father and mother are separate branches.
  */
@@ -141,15 +196,15 @@ function buildAncestorTree(
   if (!parentFamily) return { info, siblings: [] };
 
   // Collect siblings: other children of the same parent family, sorted by birth date
-  const siblings: NodeInfo[] = [];
+  const siblings: SiblingNode[] = [];
   for (const childRef of parentFamily.child_ref_list) {
     if (childRef.ref !== handle && data.persons.get(childRef.ref)) {
-      siblings.push(makePersonInfo(childRef.ref, data, selectedHandle));
+      siblings.push(buildSiblingNode(childRef.ref, data, selectedHandle));
     }
   }
   siblings.sort((a, b) => {
-    const pa = data.persons.get(a.handle);
-    const pb = data.persons.get(b.handle);
+    const pa = data.persons.get(a.info.handle);
+    const pb = data.persons.get(b.info.handle);
     const ba = pa ? getEventByType(pa, data, EVENT_BIRTH) : null;
     const bb = pb ? getEventByType(pb, data, EVENT_BIRTH) : null;
     return (ba?.year ?? Infinity) - (bb?.year ?? Infinity);

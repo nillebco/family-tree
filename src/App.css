@@ -55,7 +55,8 @@
   font-size: 0.9rem;
 }
 
-.person-item:hover {
+.person-item:hover,
+.person-item.active {
   background: #f0f7ff;
 }
 

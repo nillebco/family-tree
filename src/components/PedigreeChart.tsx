@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyWheelZoom } from "@arielladigitalconsulting/new-react-org-chart";
 import type { GrampsData } from "../types/gramps";
 import { buildHourglass } from "../utils/treeBuilder";
@@ -34,13 +34,26 @@ export default function PedigreeChart({
   const [zoom, setZoom] = useState(1);
   const [maxUp, setMaxUp] = useState(4);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
   const [detailHandle, setDetailHandle] = useState<string | null>(null);
   const [expandedSiblings, setExpandedSiblings] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [expandedSiblingChildren, setExpandedSiblingChildren] = useState<Set<string>>(
     () => new Set()
   );
 
   const toggleSiblings = useCallback((handle: string) => {
     setExpandedSiblings((prev) => {
+      const next = new Set(prev);
+      if (next.has(handle)) next.delete(handle);
+      else next.add(handle);
+      return next;
+    });
+  }, []);
+
+  const toggleSiblingChildren = useCallback((handle: string) => {
+    setExpandedSiblingChildren((prev) => {
       const next = new Set(prev);
       if (next.has(handle)) next.delete(handle);
       else next.add(handle);
@@ -64,16 +77,24 @@ export default function PedigreeChart({
       layoutHourglass(
         hourglass.ancestors,
         hourglass.selectedDescendants,
-        expandedSiblings
+        expandedSiblings,
+        expandedSiblingChildren
       ),
-    [hourglass.ancestors, hourglass.selectedDescendants, expandedSiblings]
+    [hourglass.ancestors, hourglass.selectedDescendants, expandedSiblings, expandedSiblingChildren]
   );
 
   const enrichedNodes = nodes;
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    setZoom((prev) => applyWheelZoom(prev, e.deltaY));
+  // Attach wheel handler natively with { passive: false } so preventDefault works
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((prev) => applyWheelZoom(prev, e.deltaY));
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
   }, []);
 
   const handlePointerDown = useCallback(
@@ -152,6 +173,7 @@ export default function PedigreeChart({
         </button>
       </div>
       <svg
+        ref={svgRef}
         width={svgW}
         height={svgH}
         viewBox={`0 0 ${svgW} ${svgH}`}
@@ -159,8 +181,6 @@ export default function PedigreeChart({
           cursor: panRef.current ? "grabbing" : "grab",
           touchAction: "none",
         }}
-        onWheelCapture={(e) => e.preventDefault()}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -216,7 +236,13 @@ export default function PedigreeChart({
             const collapseArrow = isMale ? "\u25B6" : "\u25C0";
 
             return (
-              <g key={p.id} transform={`translate(${n.x},${n.y})`}>
+              <g
+                key={p.id}
+                transform={`translate(${n.x},${n.y})`}
+                style={{ cursor: "pointer" }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setDetailHandle(p.handle)}
+              >
                 <rect
                   width={NODE_W}
                   height={NODE_H}
@@ -224,9 +250,6 @@ export default function PedigreeChart({
                   fill={bgFill}
                   stroke={strokeColor}
                   strokeWidth={isSelected ? 2 : 1}
-                  style={{ cursor: "pointer" }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => setDetailHandle(p.handle)}
                 />
                 <circle
                   cx={NODE_W / 2}
@@ -305,6 +328,39 @@ export default function PedigreeChart({
                       {expandedSiblings.has(p.handle)
                         ? `${collapseArrow} ${n.siblingCount}`
                         : `+${n.siblingCount}`}
+                    </text>
+                  </g>
+                )}
+                {n.childCount != null && n.childCount > 0 && (
+                  <g
+                    transform={`translate(${NODE_W / 2}, ${NODE_H + 2})`}
+                    style={{ cursor: "pointer" }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSiblingChildren(p.handle);
+                    }}
+                  >
+                    <rect
+                      x={-14}
+                      y={-10}
+                      width={28}
+                      height={20}
+                      rx={10}
+                      fill={expandedSiblingChildren.has(p.handle) ? "#e57373" : "#94a3b8"}
+                    />
+                    <text
+                      x={0}
+                      y={0}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill="#fff"
+                      fontSize={10}
+                      fontWeight={600}
+                    >
+                      {expandedSiblingChildren.has(p.handle)
+                        ? `\u25B2 ${n.childCount}`
+                        : `\u25BC ${n.childCount}`}
                     </text>
                   </g>
                 )}

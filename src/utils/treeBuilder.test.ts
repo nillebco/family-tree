@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildHourglass } from "./treeBuilder";
-import { layoutHourglass, NODE_W, H_GAP } from "./hourglassLayout";
+import { layoutHourglass, NODE_W, NODE_H, H_GAP, V_GAP, siblingSlotCount } from "./hourglassLayout";
 import type {
   GrampsData,
   GrampsPerson,
@@ -169,7 +169,7 @@ describe("buildHourglass", () => {
     expect(remoNode.info.handle).toBe(handles.remo);
     expect(remoNode.siblings.length).toBe(2);
 
-    const siblingHandles = remoNode.siblings.map((s) => s.handle);
+    const siblingHandles = remoNode.siblings.map((s) => s.info.handle);
     expect(siblingHandles).toContain(handles.brother);
     expect(siblingHandles).toContain(handles.sister);
   });
@@ -223,8 +223,8 @@ describe("buildHourglass", () => {
     expect(siblings.length).toBe(2);
 
     // Sister (1980) should come before Brother (1985)
-    expect(siblings[0].handle).toBe(handles.sister);
-    expect(siblings[1].handle).toBe(handles.brother);
+    expect(siblings[0].info.handle).toBe(handles.sister);
+    expect(siblings[1].info.handle).toBe(handles.brother);
   });
 });
 
@@ -249,7 +249,7 @@ describe("layoutHourglass — sibling placement by gender", () => {
     // All siblings should be to the LEFT of Remo (lower x)
     for (const sibling of hourglass.ancestors.siblings) {
       const sibNode = layout.nodes.find(
-        (n) => n.info.handle === sibling.handle
+        (n) => n.info.handle === sibling.info.handle
       )!;
       expect(sibNode).toBeDefined();
       expect(sibNode.x).toBeLessThan(remoNode.x);
@@ -337,7 +337,7 @@ describe("layoutHourglass — sibling placement by gender", () => {
     expect(motherNode).toBeDefined();
     expect(motherNode.info.handle).toBe(handles.mother);
     expect(motherNode.siblings.length).toBe(1);
-    expect(motherNode.siblings[0].handle).toBe("h_aunt");
+    expect(motherNode.siblings[0].info.handle).toBe("h_aunt");
 
     // Expand Mother's siblings
     const expanded = new Set([handles.mother]);
@@ -470,14 +470,14 @@ describe("layoutHourglass — sibling placement by gender", () => {
 
     // Remo's siblings (gen 0) — distance from Remo
     const remoSibDistances = hourglass.ancestors.siblings.map((s) => {
-      const sibNode = layout.nodes.find((n) => n.info.handle === s.handle)!;
+      const sibNode = layout.nodes.find((n) => n.info.handle === s.info.handle)!;
       return Math.abs(sibNode.x - remoNode.x);
     });
 
     // Father's siblings (gen 1) — distance from Remo (the direct line center)
     const fatherSibDistances = hourglass.ancestors.father!.siblings.map(
       (s) => {
-        const sibNode = layout.nodes.find((n) => n.info.handle === s.handle)!;
+        const sibNode = layout.nodes.find((n) => n.info.handle === s.info.handle)!;
         return Math.abs(sibNode.x - remoNode.x);
       }
     );
@@ -505,9 +505,361 @@ describe("layoutHourglass — sibling placement by gender", () => {
 
     for (const sibling of hourglass.ancestors.siblings) {
       const sibNode = layout.nodes.find(
-        (n) => n.info.handle === sibling.handle
+        (n) => n.info.handle === sibling.info.handle
       )!;
       expect(sibNode.y).toBe(remoNode.y);
     }
+  });
+});
+
+describe("SiblingNode families", () => {
+  /**
+   * Extended mock: Brother has a family with a spouse (BrotherWife) and a child (Nephew).
+   */
+  function makeMockDataWithSiblingFamily(): {
+    data: GrampsData;
+    handles: Record<string, string>;
+  } {
+    const { data, handles } = makeMockData();
+
+    // Add BrotherWife and Nephew
+    const bwHandle = "h_brother_wife";
+    const nephewHandle = "h_nephew";
+
+    const brotherWife: GrampsPerson = {
+      _class: "Person",
+      handle: bwHandle,
+      gramps_id: bwHandle,
+      private: false,
+      gender: 0,
+      primary_name: {
+        first_name: "BrotherWife",
+        surname_list: [{ surname: "Test", prefix: "", primary: true }],
+        suffix: "",
+        title: "",
+      },
+      event_ref_list: [],
+      family_list: ["fam_brother"],
+      parent_family_list: [],
+    };
+
+    const nephew: GrampsPerson = {
+      _class: "Person",
+      handle: nephewHandle,
+      gramps_id: nephewHandle,
+      private: false,
+      gender: 1,
+      primary_name: {
+        first_name: "Nephew",
+        surname_list: [{ surname: "Test", prefix: "", primary: true }],
+        suffix: "",
+        title: "",
+      },
+      event_ref_list: [],
+      family_list: [],
+      parent_family_list: ["fam_brother"],
+    };
+
+    const brotherFamily: GrampsFamily = {
+      _class: "Family",
+      handle: "fam_brother",
+      gramps_id: "fam_brother",
+      father_handle: handles.brother,
+      mother_handle: bwHandle,
+      child_ref_list: [{ ref: nephewHandle }],
+      event_ref_list: [],
+    };
+
+    data.persons.set(bwHandle, brotherWife);
+    data.persons.set(nephewHandle, nephew);
+    data.families.set("fam_brother", brotherFamily);
+    // Give Brother a family_list
+    data.persons.get(handles.brother)!.family_list = ["fam_brother"];
+
+    return {
+      data,
+      handles: { ...handles, brotherWife: bwHandle, nephew: nephewHandle },
+    };
+  }
+
+  it("SiblingNode has families populated with spouse and children", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+    const result = buildHourglass(handles.remo, data, 4);
+
+    const brotherSib = result.ancestors.siblings.find(
+      (s) => s.info.handle === handles.brother
+    )!;
+    expect(brotherSib).toBeDefined();
+    expect(brotherSib.families.length).toBe(1);
+    expect(brotherSib.families[0].spouse).toBeDefined();
+    expect(brotherSib.families[0].spouse!.handle).toBe(handles.brotherWife);
+    expect(brotherSib.families[0].children.length).toBe(1);
+    expect(brotherSib.families[0].children[0].info.handle).toBe(handles.nephew);
+  });
+
+  it("siblingSlotCount returns 1 when collapsed", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+    const result = buildHourglass(handles.remo, data, 4);
+
+    const brotherSib = result.ancestors.siblings.find(
+      (s) => s.info.handle === handles.brother
+    )!;
+    expect(siblingSlotCount(brotherSib, new Set())).toBe(1);
+  });
+
+  it("siblingSlotCount returns correct width when expanded", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+    const result = buildHourglass(handles.remo, data, 4);
+
+    const brotherSib = result.ancestors.siblings.find(
+      (s) => s.info.handle === handles.brother
+    )!;
+    // Brother has 1 family: spouse + 1 child → max(2, 1) = 2 slots
+    expect(siblingSlotCount(brotherSib, new Set([handles.brother]))).toBe(2);
+  });
+
+  it("expanded sibling children appear at correct y-level", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+    const hourglass = buildHourglass(handles.remo, data, 4);
+
+    const expandedSiblings = new Set([handles.remo]);
+    const expandedSiblingChildren = new Set([handles.brother]);
+    const layout = layoutHourglass(
+      hourglass.ancestors,
+      hourglass.selectedDescendants,
+      expandedSiblings,
+      expandedSiblingChildren
+    );
+
+    const brotherNode = layout.nodes.find(
+      (n) => n.info.handle === handles.brother
+    )!;
+    const nephewNode = layout.nodes.find(
+      (n) => n.info.handle === handles.nephew
+    )!;
+
+    expect(brotherNode).toBeDefined();
+    expect(nephewNode).toBeDefined();
+    // Nephew should be one generation below Brother
+    expect(nephewNode.y).toBe(brotherNode.y + NODE_H + V_GAP);
+  });
+
+  it("sibling spouse appears next to sibling", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+    const hourglass = buildHourglass(handles.remo, data, 4);
+
+    const expandedSiblings = new Set([handles.remo]);
+    const expandedSiblingChildren = new Set([handles.brother]);
+    const layout = layoutHourglass(
+      hourglass.ancestors,
+      hourglass.selectedDescendants,
+      expandedSiblings,
+      expandedSiblingChildren
+    );
+
+    const brotherNode = layout.nodes.find(
+      (n) => n.info.handle === handles.brother
+    )!;
+    const bwNode = layout.nodes.find(
+      (n) => n.info.handle === handles.brotherWife
+    )!;
+
+    expect(brotherNode).toBeDefined();
+    expect(bwNode).toBeDefined();
+    // Spouse should be at the same y-level
+    expect(bwNode.y).toBe(brotherNode.y);
+    // Spouse should be next to brother (to the right, with SPOUSE_GAP)
+    expect(bwNode.x).toBe(brotherNode.x + NODE_W + 8); // SPOUSE_GAP = 8
+  });
+
+  it("sibling node has childCount set when it has children", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+    const hourglass = buildHourglass(handles.remo, data, 4);
+
+    const expandedSiblings = new Set([handles.remo]);
+    const layout = layoutHourglass(
+      hourglass.ancestors,
+      hourglass.selectedDescendants,
+      expandedSiblings
+    );
+
+    const brotherNode = layout.nodes.find(
+      (n) => n.info.handle === handles.brother
+    )!;
+    expect(brotherNode).toBeDefined();
+    expect(brotherNode.childCount).toBe(1);
+  });
+
+  it("sibling children are SiblingNodes with their own families", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+
+    // Give Nephew a child (GrandNephew) so Nephew has his own family
+    const grandNephew: GrampsPerson = {
+      _class: "Person",
+      handle: "h_grandnephew",
+      gramps_id: "h_grandnephew",
+      private: false,
+      gender: 1,
+      primary_name: {
+        first_name: "GrandNephew",
+        surname_list: [{ surname: "Test", prefix: "", primary: true }],
+        suffix: "",
+        title: "",
+      },
+      event_ref_list: [],
+      family_list: [],
+      parent_family_list: ["fam_nephew"],
+    };
+    const nephewFamily: GrampsFamily = {
+      _class: "Family",
+      handle: "fam_nephew",
+      gramps_id: "fam_nephew",
+      father_handle: handles.nephew,
+      mother_handle: "",
+      child_ref_list: [{ ref: "h_grandnephew" }],
+      event_ref_list: [],
+    };
+    data.persons.set("h_grandnephew", grandNephew);
+    data.families.set("fam_nephew", nephewFamily);
+    data.persons.get(handles.nephew)!.family_list = ["fam_nephew"];
+
+    const result = buildHourglass(handles.remo, data, 4);
+    const brotherSib = result.ancestors.siblings.find(
+      (s) => s.info.handle === handles.brother
+    )!;
+    const nephewSib = brotherSib.families[0].children.find(
+      (c) => c.info.handle === handles.nephew
+    )!;
+
+    // Nephew is a SiblingNode with his own families
+    expect(nephewSib).toBeDefined();
+    expect(nephewSib.families.length).toBe(1);
+    expect(nephewSib.families[0].children.length).toBe(1);
+    expect(nephewSib.families[0].children[0].info.handle).toBe("h_grandnephew");
+  });
+
+  it("sibling children without families have empty families array", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+    const result = buildHourglass(handles.remo, data, 4);
+
+    const brotherSib = result.ancestors.siblings.find(
+      (s) => s.info.handle === handles.brother
+    )!;
+    const nephewSib = brotherSib.families[0].children.find(
+      (c) => c.info.handle === handles.nephew
+    )!;
+
+    // Nephew has no family_list in base mock → empty families
+    expect(nephewSib.families).toEqual([]);
+  });
+
+  it("expanded sibling child nodes show direct children count", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+
+    // Give Nephew a child (GrandNephew)
+    const grandNephew: GrampsPerson = {
+      _class: "Person",
+      handle: "h_grandnephew",
+      gramps_id: "h_grandnephew",
+      private: false,
+      gender: 1,
+      primary_name: {
+        first_name: "GrandNephew",
+        surname_list: [{ surname: "Test", prefix: "", primary: true }],
+        suffix: "",
+        title: "",
+      },
+      event_ref_list: [],
+      family_list: [],
+      parent_family_list: ["fam_nephew"],
+    };
+    const nephewFamily: GrampsFamily = {
+      _class: "Family",
+      handle: "fam_nephew",
+      gramps_id: "fam_nephew",
+      father_handle: handles.nephew,
+      mother_handle: "",
+      child_ref_list: [{ ref: "h_grandnephew" }],
+      event_ref_list: [],
+    };
+    data.persons.set("h_grandnephew", grandNephew);
+    data.families.set("fam_nephew", nephewFamily);
+    data.persons.get(handles.nephew)!.family_list = ["fam_nephew"];
+
+    const hourglass = buildHourglass(handles.remo, data, 4);
+
+    const expandedSiblings = new Set([handles.remo]);
+    const expandedSiblingChildren = new Set([handles.brother]);
+    const layout = layoutHourglass(
+      hourglass.ancestors,
+      hourglass.selectedDescendants,
+      expandedSiblings,
+      expandedSiblingChildren
+    );
+
+    // Nephew placed node should show childCount = 1 (direct children only)
+    const nephewNode = layout.nodes.find(
+      (n) => n.info.handle === handles.nephew
+    )!;
+    expect(nephewNode).toBeDefined();
+    expect(nephewNode.childCount).toBe(1);
+  });
+
+  it("expanding a sibling child reveals grandchildren", () => {
+    const { data, handles } = makeMockDataWithSiblingFamily();
+
+    // Give Nephew a child (GrandNephew)
+    const grandNephew: GrampsPerson = {
+      _class: "Person",
+      handle: "h_grandnephew",
+      gramps_id: "h_grandnephew",
+      private: false,
+      gender: 1,
+      primary_name: {
+        first_name: "GrandNephew",
+        surname_list: [{ surname: "Test", prefix: "", primary: true }],
+        suffix: "",
+        title: "",
+      },
+      event_ref_list: [],
+      family_list: [],
+      parent_family_list: ["fam_nephew"],
+    };
+    const nephewFamily: GrampsFamily = {
+      _class: "Family",
+      handle: "fam_nephew",
+      gramps_id: "fam_nephew",
+      father_handle: handles.nephew,
+      mother_handle: "",
+      child_ref_list: [{ ref: "h_grandnephew" }],
+      event_ref_list: [],
+    };
+    data.persons.set("h_grandnephew", grandNephew);
+    data.families.set("fam_nephew", nephewFamily);
+    data.persons.get(handles.nephew)!.family_list = ["fam_nephew"];
+
+    const hourglass = buildHourglass(handles.remo, data, 4);
+
+    // Expand siblings, then Brother's children, then Nephew's children
+    const expandedSiblings = new Set([handles.remo]);
+    const expandedSiblingChildren = new Set([handles.brother, handles.nephew]);
+    const layout = layoutHourglass(
+      hourglass.ancestors,
+      hourglass.selectedDescendants,
+      expandedSiblings,
+      expandedSiblingChildren
+    );
+
+    const nephewNode = layout.nodes.find(
+      (n) => n.info.handle === handles.nephew
+    )!;
+    const grandNephewNode = layout.nodes.find(
+      (n) => n.info.handle === "h_grandnephew"
+    )!;
+
+    expect(nephewNode).toBeDefined();
+    expect(grandNephewNode).toBeDefined();
+    // GrandNephew should be one row below Nephew
+    expect(grandNephewNode.y).toBe(nephewNode.y + NODE_H + V_GAP);
   });
 });

@@ -1,4 +1,4 @@
-import type { AncestorNode, DescendantNode, NodeInfo } from "./treeBuilder";
+import type { AncestorNode, DescendantNode, NodeInfo, SiblingNode } from "./treeBuilder";
 
 export const NODE_W = 200;
 export const NODE_H = 120;
@@ -11,6 +11,7 @@ export interface PlacedNode {
   x: number;
   y: number;
   siblingCount?: number;
+  childCount?: number; // total children across all families (for sibling nodes)
 }
 
 export interface PlacedLink {
@@ -29,22 +30,144 @@ export interface LayoutResult {
   height: number;
 }
 
+// ── Sibling children helpers ────────────────────────────────────────
+
+/** Count direct children across all families of a SiblingNode */
+function siblingDirectChildCount(sib: SiblingNode): number {
+  let count = 0;
+  for (const fam of sib.families) count += fam.children.length;
+  return count;
+}
+
+/** Count how many horizontal slots a sibling (or sibling child) occupies, recursively */
+export function siblingSlotCount(
+  sib: SiblingNode,
+  expandedSiblingChildren: Set<string>
+): number {
+  if (!expandedSiblingChildren.has(sib.info.handle)) return 1;
+  const totalChildren = siblingDirectChildCount(sib);
+  if (totalChildren === 0) return 1;
+  // Each family needs at least 2 slots (couple) or sum of child slot widths
+  let totalSlots = 0;
+  for (const fam of sib.families) {
+    const hasSpouse = !!fam.spouse;
+    const coupleSlots = hasSpouse ? 2 : 1;
+    let childSlots = 0;
+    for (const child of fam.children) {
+      childSlots += siblingSlotCount(child, expandedSiblingChildren);
+    }
+    totalSlots += Math.max(coupleSlots, childSlots);
+  }
+  return Math.max(1, totalSlots);
+}
+
+/** Place a sibling's spouse and children below them, recursively */
+function layoutSiblingFamily(
+  sib: SiblingNode,
+  sibX: number,
+  sibY: number,
+  nodes: PlacedNode[],
+  links: PlacedLink[],
+  expandedSiblingChildren: Set<string>
+): void {
+  const nodeSpan = NODE_W + H_GAP;
+  const coupleSpan = NODE_W + SPOUSE_GAP;
+
+  let cursor = sibX; // leftEdge for this sibling's children
+
+  for (const fam of sib.families) {
+    const hasSpouse = !!fam.spouse;
+    const childY = sibY + NODE_H + V_GAP;
+
+    if (fam.children.length === 0) {
+      // Just place spouse next to sibling
+      if (fam.spouse) {
+        const spouseX = sibX + coupleSpan;
+        nodes.push({ info: fam.spouse, x: spouseX, y: sibY });
+        links.push({
+          fromX: spouseX,
+          fromY: sibY + NODE_H / 2,
+          toX: sibX + NODE_W,
+          toY: sibY + NODE_H / 2,
+          key: `sm-${sib.info.id}-${fam.spouse.id}`,
+          isMarriage: true,
+        });
+      }
+      continue;
+    }
+
+    // Place children
+    const childPositions: { x: number }[] = [];
+    for (const child of fam.children) {
+      const cx = cursor;
+      const directChildren = siblingDirectChildCount(child);
+      nodes.push({
+        info: child.info,
+        x: cx,
+        y: childY,
+        childCount: directChildren || undefined,
+      });
+      childPositions.push({ x: cx });
+      // If this child is expanded, recurse to place their family
+      if (expandedSiblingChildren.has(child.info.handle)) {
+        layoutSiblingFamily(child, cx, childY, nodes, links, expandedSiblingChildren);
+      }
+      cursor += siblingSlotCount(child, expandedSiblingChildren) * nodeSpan;
+    }
+
+    // Place spouse next to sibling
+    if (fam.spouse) {
+      const spouseX = sibX + coupleSpan;
+      nodes.push({ info: fam.spouse, x: spouseX, y: sibY });
+      links.push({
+        fromX: spouseX,
+        fromY: sibY + NODE_H / 2,
+        toX: sibX + NODE_W,
+        toY: sibY + NODE_H / 2,
+        key: `sm-${sib.info.id}-${fam.spouse.id}`,
+        isMarriage: true,
+      });
+    }
+
+    // Drop point for parent-child links
+    const dropX = hasSpouse
+      ? (sibX + NODE_W / 2 + sibX + coupleSpan + NODE_W / 2) / 2
+      : sibX + NODE_W / 2;
+
+    for (const cp of childPositions) {
+      links.push({
+        fromX: dropX,
+        fromY: sibY + NODE_H,
+        toX: cp.x + NODE_W / 2,
+        toY: childY,
+        key: `sc-${sib.info.id}-${cp.x}`,
+      });
+    }
+  }
+}
+
 // ── Ancestor layout (fans out UPWARD) ──────────────────────────────
 
 export function ancestorLeafCount(
   node: AncestorNode,
-  expandedSiblings: Set<string>
+  expandedSiblings: Set<string>,
+  expandedSiblingChildren: Set<string> = new Set()
 ): number {
   const expanded = expandedSiblings.has(node.info.handle);
-  const siblingSlots = expanded ? node.siblings.length : 0;
+  let siblingSlots = 0;
+  if (expanded) {
+    for (const sib of node.siblings) {
+      siblingSlots += siblingSlotCount(sib, expandedSiblingChildren);
+    }
+  }
 
   if (!node.father && !node.mother) return 1 + siblingSlots;
 
   let parentCount = 0;
   if (node.father)
-    parentCount += ancestorLeafCount(node.father, expandedSiblings);
+    parentCount += ancestorLeafCount(node.father, expandedSiblings, expandedSiblingChildren);
   if (node.mother)
-    parentCount += ancestorLeafCount(node.mother, expandedSiblings);
+    parentCount += ancestorLeafCount(node.mother, expandedSiblings, expandedSiblingChildren);
   return parentCount + siblingSlots;
 }
 
@@ -63,13 +186,19 @@ export function layoutAncestors(
   nodes: PlacedNode[],
   links: PlacedLink[],
   expandedSiblings: Set<string>,
-  cumulativeSibOffset: number = 0
+  cumulativeSibOffset: number = 0,
+  expandedSiblingChildren: Set<string> = new Set()
 ): { x: number; width: number } {
   const nodeSpan = NODE_W + H_GAP;
   const y = baselineY - generation * (NODE_H + V_GAP);
 
   const expanded = expandedSiblings.has(node.info.handle);
-  const siblingSlots = expanded ? node.siblings.length : 0;
+  let siblingSlots = 0;
+  if (expanded) {
+    for (const sib of node.siblings) {
+      siblingSlots += siblingSlotCount(sib, expandedSiblingChildren);
+    }
+  }
   const isMale = node.info.gender === 1;
 
   const parents: AncestorNode[] = [];
@@ -82,16 +211,30 @@ export function layoutAncestors(
 
     if (expanded && isMale) {
       x = leftEdge + siblingSlots * nodeSpan;
-      for (let i = 0; i < node.siblings.length; i++) {
-        const sx = leftEdge + i * nodeSpan;
-        nodes.push({ info: node.siblings[i], x: sx, y });
+      let cursor = leftEdge;
+      for (const sib of node.siblings) {
+        const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
+        const sx = cursor;
+        const directChildren = siblingDirectChildCount(sib);
+        nodes.push({ info: sib.info, x: sx, y, childCount: directChildren || undefined });
+        if (expandedSiblingChildren.has(sib.info.handle)) {
+          layoutSiblingFamily(sib, sx, y, nodes, links, expandedSiblingChildren);
+        }
+        cursor += slotWidth * nodeSpan;
       }
     } else {
       x = leftEdge;
       if (expanded) {
-        for (let i = 0; i < node.siblings.length; i++) {
-          const sx = leftEdge + (i + 1) * nodeSpan;
-          nodes.push({ info: node.siblings[i], x: sx, y });
+        let cursor = leftEdge + nodeSpan;
+        for (const sib of node.siblings) {
+          const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
+          const sx = cursor;
+          const totalChildren = sib.families.reduce((sum, f) => sum + f.children.length, 0);
+          nodes.push({ info: sib.info, x: sx, y, childCount: totalChildren || undefined });
+          if (expandedSiblingChildren.has(sib.info.handle)) {
+            layoutSiblingFamily(sib, sx, y, nodes, links, expandedSiblingChildren);
+          }
+          cursor += slotWidth * nodeSpan;
         }
       }
     }
@@ -117,7 +260,7 @@ export function layoutAncestors(
   let cursor = parentLeftEdge;
   const parentPositions: { x: number; width: number }[] = [];
   for (const parent of parents) {
-    const leafWidth = ancestorLeafCount(parent, expandedSiblings) * nodeSpan;
+    const leafWidth = ancestorLeafCount(parent, expandedSiblings, expandedSiblingChildren) * nodeSpan;
     const pos = layoutAncestors(
       parent,
       generation + 1,
@@ -126,7 +269,8 @@ export function layoutAncestors(
       nodes,
       links,
       expandedSiblings,
-      childOffset
+      childOffset,
+      expandedSiblingChildren
     );
     parentPositions.push(pos);
     cursor += leafWidth;
@@ -144,9 +288,15 @@ export function layoutAncestors(
   if (expanded) {
     if (isMale) {
       // Siblings to the LEFT, pushed out by cumulative offset
-      for (let i = 0; i < node.siblings.length; i++) {
-        const sx = x - (cumulativeSibOffset + i + 1) * nodeSpan;
-        nodes.push({ info: node.siblings[i], x: sx, y });
+      let sibCursor = 0;
+      for (const sib of node.siblings) {
+        const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
+        const sx = x - (cumulativeSibOffset + sibCursor + slotWidth) * nodeSpan;
+        const directChildren = siblingDirectChildCount(sib);
+        nodes.push({ info: sib.info, x: sx, y, childCount: directChildren || undefined });
+        if (expandedSiblingChildren.has(sib.info.handle)) {
+          layoutSiblingFamily(sib, sx, y, nodes, links, expandedSiblingChildren);
+        }
         for (let pi = 0; pi < parents.length; pi++) {
           const px = parentPositions[pi].x + NODE_W / 2;
           const py = y - (NODE_H + V_GAP) + NODE_H;
@@ -155,15 +305,22 @@ export function layoutAncestors(
             fromY: py,
             toX: sx + NODE_W / 2,
             toY: y,
-            key: `a-${parents[pi].info.id}-sib-${node.siblings[i].id}`,
+            key: `a-${parents[pi].info.id}-sib-${sib.info.id}`,
           });
         }
+        sibCursor += slotWidth;
       }
     } else {
       // Siblings to the RIGHT, pushed out by cumulative offset
-      for (let i = 0; i < node.siblings.length; i++) {
-        const sx = x + (cumulativeSibOffset + i + 1) * nodeSpan;
-        nodes.push({ info: node.siblings[i], x: sx, y });
+      let sibCursor = 0;
+      for (const sib of node.siblings) {
+        const slotWidth = siblingSlotCount(sib, expandedSiblingChildren);
+        const sx = x + (cumulativeSibOffset + sibCursor + 1) * nodeSpan;
+        const directChildren = siblingDirectChildCount(sib);
+        nodes.push({ info: sib.info, x: sx, y, childCount: directChildren || undefined });
+        if (expandedSiblingChildren.has(sib.info.handle)) {
+          layoutSiblingFamily(sib, sx, y, nodes, links, expandedSiblingChildren);
+        }
         for (let pi = 0; pi < parents.length; pi++) {
           const px = parentPositions[pi].x + NODE_W / 2;
           const py = y - (NODE_H + V_GAP) + NODE_H;
@@ -172,9 +329,10 @@ export function layoutAncestors(
             fromY: py,
             toX: sx + NODE_W / 2,
             toY: y,
-            key: `a-${parents[pi].info.id}-sib-${node.siblings[i].id}`,
+            key: `a-${parents[pi].info.id}-sib-${sib.info.id}`,
           });
         }
+        sibCursor += slotWidth;
       }
     }
   }
@@ -388,14 +546,15 @@ function layoutDescendants(
 export function layoutHourglass(
   ancestors: AncestorNode,
   selectedDescendants: DescendantNode,
-  expandedSiblings: Set<string>
+  expandedSiblings: Set<string>,
+  expandedSiblingChildren: Set<string> = new Set()
 ): LayoutResult {
   const nodeSpan = NODE_W + H_GAP;
   const nodes: PlacedNode[] = [];
   const links: PlacedLink[] = [];
 
   const aDepth = ancestorDepth(ancestors);
-  const aLeaves = ancestorLeafCount(ancestors, expandedSiblings);
+  const aLeaves = ancestorLeafCount(ancestors, expandedSiblings, expandedSiblingChildren);
   const sdLeaves = Math.max(descendantLeafCount(selectedDescendants), 1);
 
   const totalLeaves = Math.max(aLeaves, sdLeaves);
@@ -413,7 +572,9 @@ export function layoutHourglass(
     baselineY,
     nodes,
     links,
-    expandedSiblings
+    expandedSiblings,
+    0,
+    expandedSiblingChildren
   );
 
   if (selectedDescendants.families.length > 0) {
