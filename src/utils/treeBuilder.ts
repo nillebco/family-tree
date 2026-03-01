@@ -310,18 +310,19 @@ export function buildHourglass(
     rootHandle = currentHandle;
   }
 
-  // Ancestor tree from the root person
-  // We already "used" stepsUp generations walking up, so subtract those
+  // Ancestor tree from the SELECTED person (full binary tree showing both
+  // paternal and maternal lines).  The descendant tree starts from the root
+  // found above so that siblings along the direct line are visible.
   const ancestors = buildAncestorTree(
-    rootHandle,
+    selectedHandle,
     data,
     selectedHandle,
-    Math.max(0, maxUp - stepsUp)
+    maxUp
   );
 
   // Collect ancestor handles so descendants don't duplicate them
   const visited = new Set<string>();
-  collectAncestorHandles(rootHandle, data, Math.max(0, maxUp - 1), visited);
+  collectAncestorHandles(selectedHandle, data, maxUp, visited);
   visited.delete(rootHandle);
 
   const descendants = buildDescendantTree(
