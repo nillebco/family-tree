@@ -29,6 +29,7 @@ export default function PersonPicker({ data, onSelect }: PersonPickerProps) {
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
         className="person-search"
+        autoFocus
       />
       <div className="person-list">
         {filtered.map((p) => (
