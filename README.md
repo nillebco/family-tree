@@ -21,6 +21,8 @@ npm run dev
 
 Open the app in your browser, load a Gramps NDJSON file, select a person, and explore the chart.
 
+[Try this](https://family.nilleb.io)
+
 ## Data Format
 
 The app reads **NDJSON** (Newline Delimited JSON) files exported from Gramps, containing persons, families, events, and places.

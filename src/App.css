@@ -2,6 +2,49 @@
   width: 100%;
   height: 100vh;
   overflow: hidden;
+  position: relative;
+}
+
+.github-banner {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 200;
+  width: 200px;
+  height: 200px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.github-banner span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  position: absolute;
+  width: 280px;
+  top: 42px;
+  right: -60px;
+  transform: rotate(45deg);
+  background: #24292e;
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.github-banner:hover span {
+  background: #444d56;
+}
+
+.github-banner .github-icon {
+  width: 16px;
+  height: 16px;
+  fill: #fff;
+  flex-shrink: 0;
 }
 
 .centered {
