@@ -30,7 +30,7 @@ export default function App() {
       </a>
       {state.step === "load" && (
         <div className="centered">
-          <h1>Pedigree Viewer</h1>
+          <h1>Pedigree Viewer{import.meta.env.DEV && " (dev)"}</h1>
           <FileLoader
             onDataLoaded={(data) => setState({ step: "pick", data })}
           />
