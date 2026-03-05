@@ -520,6 +520,48 @@
   background: #f8fafc;
 }
 
+/* ── Children edit list ──────────────────────────────────────── */
+
+.pdp-children-family {
+  margin-bottom: 0.5rem;
+}
+
+.pdp-children-spouse-label {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-style: italic;
+  margin-bottom: 0.25rem;
+}
+
+.pdp-child-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0.4rem;
+  margin-bottom: 0.15rem;
+  border-radius: 4px;
+  background: #fafbfc;
+}
+
+.pdp-child-name {
+  font-size: 0.88rem;
+  color: #334155;
+}
+
+.pdp-child-remove {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 0.3rem 0 0.6rem;
+  line-height: 1;
+}
+
+.pdp-child-remove:hover {
+  color: #ef4444;
+}
+
 /* ── PersonSelect (inline person picker) ─────────────────────── */
 
 .person-select {

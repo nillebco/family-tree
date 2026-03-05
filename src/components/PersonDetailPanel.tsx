@@ -209,6 +209,12 @@ interface AltNameEdit {
   typeValue: number;
 }
 
+interface ChildrenByFamily {
+  familyHandle: string;
+  spouseHandle: string | null;
+  childHandles: string[];
+}
+
 interface EditFormState {
   firstName: string;
   surname: string;
@@ -225,6 +231,7 @@ interface EditFormState {
   deathPlace: string;
   fatherHandle: string | null;
   motherHandle: string | null;
+  childrenByFamily: ChildrenByFamily[];
 }
 
 function altNameFromGramps(name: GrampsName): AltNameEdit {
@@ -265,6 +272,24 @@ function buildEditState(person: GrampsPerson, data: GrampsData): EditFormState {
     }
   }
 
+  // Build children by family
+  const childrenByFamily: ChildrenByFamily[] = person.family_list.map((fh) => {
+    const family = data.families.get(fh);
+    if (!family) return { familyHandle: fh, spouseHandle: null, childHandles: [] };
+    const spouseHandle = family.father_handle === person.handle
+      ? (family.mother_handle || null)
+      : (family.father_handle || null);
+    return {
+      familyHandle: fh,
+      spouseHandle,
+      childHandles: family.child_ref_list.map((c) => c.ref),
+    };
+  });
+  // If person has no families, add an empty entry so UI can show "Add child"
+  if (childrenByFamily.length === 0) {
+    childrenByFamily.push({ familyHandle: "", spouseHandle: null, childHandles: [] });
+  }
+
   return {
     firstName: person.primary_name.first_name,
     surname: primarySurname?.surname || "",
@@ -281,6 +306,7 @@ function buildEditState(person: GrampsPerson, data: GrampsData): EditFormState {
     deathPlace: deathEvent?.place || "",
     fatherHandle: editFatherHandle,
     motherHandle: editMotherHandle,
+    childrenByFamily,
   };
 }
 
@@ -534,6 +560,76 @@ export default function PersonDetailPanel({
             newPersons.set(newMother, {
               ...mother,
               family_list: [...mother.family_list, familyHandle],
+            });
+          }
+        }
+      }
+    }
+
+    // ── Children mutations ──
+    let currentPerson2 = newPersons.get(handle)!;
+    for (const cbf of editForm.childrenByFamily) {
+      if (cbf.familyHandle) {
+        // Existing family — compare original vs edited children
+        const origFamily = data.families.get(cbf.familyHandle);
+        if (!origFamily) continue;
+        const origChildHandles = origFamily.child_ref_list.map((c) => c.ref);
+        const removed = origChildHandles.filter((h) => !cbf.childHandles.includes(h));
+        const added = cbf.childHandles.filter((h) => !origChildHandles.includes(h));
+
+        if (removed.length > 0 || added.length > 0) {
+          const updatedFam = newFamilies.get(cbf.familyHandle) || { ...origFamily };
+          // Build new child_ref_list
+          updatedFam.child_ref_list = cbf.childHandles.map((h) => ({ ref: h }));
+          newFamilies.set(cbf.familyHandle, { ...updatedFam });
+
+          // Update removed children's parent_family_list
+          for (const rh of removed) {
+            const child = newPersons.get(rh);
+            if (child) {
+              newPersons.set(rh, {
+                ...child,
+                parent_family_list: child.parent_family_list.filter((f) => f !== cbf.familyHandle),
+              });
+            }
+          }
+          // Update added children's parent_family_list
+          for (const ah of added) {
+            const child = newPersons.get(ah);
+            if (child && !child.parent_family_list.includes(cbf.familyHandle)) {
+              newPersons.set(ah, {
+                ...child,
+                parent_family_list: [...child.parent_family_list, cbf.familyHandle],
+              });
+            }
+          }
+        }
+      } else if (cbf.childHandles.length > 0) {
+        // New family needed
+        const familyHandle2 = generateHandle();
+        const isFather = currentPerson2.gender === 1;
+        const newFam: GrampsFamily = {
+          _class: "Family",
+          handle: familyHandle2,
+          gramps_id: "",
+          father_handle: isFather ? handle : "",
+          mother_handle: isFather ? "" : handle,
+          child_ref_list: cbf.childHandles.map((h) => ({ ref: h })),
+          event_ref_list: [],
+        };
+        newFamilies.set(familyHandle2, newFam);
+
+        // Add to person's family_list
+        currentPerson2 = { ...currentPerson2, family_list: [...currentPerson2.family_list, familyHandle2] };
+        newPersons.set(handle, currentPerson2);
+
+        // Add to children's parent_family_list
+        for (const ch of cbf.childHandles) {
+          const child = newPersons.get(ch);
+          if (child && !child.parent_family_list.includes(familyHandle2)) {
+            newPersons.set(ch, {
+              ...child,
+              parent_family_list: [...child.parent_family_list, familyHandle2],
             });
           }
         }
@@ -834,6 +930,63 @@ export default function PersonDetailPanel({
               excludeHandles={[handle, ...(editForm.fatherHandle ? [editForm.fatherHandle] : [])]}
               label="Mother"
             />
+          </div>
+
+          <div className="pdp-edit-section">
+            <h3>Children</h3>
+            {editForm.childrenByFamily.map((cbf, fi) => {
+              const spouseName = cbf.spouseHandle
+                ? (() => { const sp = data.persons.get(cbf.spouseHandle); return sp ? getPersonName(sp) : "Unknown"; })()
+                : null;
+              // Collect all child handles across all families for exclusion
+              const allChildHandles = editForm.childrenByFamily.flatMap((f) => f.childHandles);
+              return (
+                <div key={cbf.familyHandle || `new-${fi}`} className="pdp-children-family">
+                  {spouseName && (
+                    <div className="pdp-children-spouse-label">with {spouseName}</div>
+                  )}
+                  {cbf.childHandles.map((ch) => {
+                    const child = data.persons.get(ch);
+                    return (
+                      <div key={ch} className="pdp-child-item">
+                        <span className="pdp-child-name">{child ? getPersonName(child) : ch}</span>
+                        <button
+                          className="pdp-child-remove"
+                          onClick={() => {
+                            setEditForm((prev) => {
+                              if (!prev) return prev;
+                              const updated = prev.childrenByFamily.map((f, i) =>
+                                i === fi ? { ...f, childHandles: f.childHandles.filter((h) => h !== ch) } : f
+                              );
+                              return { ...prev, childrenByFamily: updated };
+                            });
+                          }}
+                          title="Remove child"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <PersonSelect
+                    data={data}
+                    value={null}
+                    onChange={(h) => {
+                      if (!h) return;
+                      setEditForm((prev) => {
+                        if (!prev) return prev;
+                        const updated = prev.childrenByFamily.map((f, i) =>
+                          i === fi ? { ...f, childHandles: [...f.childHandles, h] } : f
+                        );
+                        return { ...prev, childrenByFamily: updated };
+                      });
+                    }}
+                    excludeHandles={[handle, ...allChildHandles]}
+                    label="Add child"
+                  />
+                </div>
+              );
+            })}
           </div>
 
           <div className="pdp-edit-actions">
