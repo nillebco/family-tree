@@ -39,6 +39,7 @@ export default function PedigreeChart({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
   const [detailHandle, setDetailHandle] = useState<string | null>(null);
+  const [createMode, setCreateMode] = useState(false);
   const [expandedSiblings, setExpandedSiblings] = useState<Set<string>>(
     () => new Set()
   );
@@ -393,6 +394,23 @@ export default function PedigreeChart({
           onNavigate={(h) => setDetailHandle(h)}
           onDataChanged={onDataChanged}
         />
+      )}
+      {createMode && (
+        <PersonDetailPanel
+          handle=""
+          createMode
+          data={data}
+          includePrivate={includePrivate}
+          onClose={() => setCreateMode(false)}
+          onNavigate={(h) => {
+            setCreateMode(false);
+            setDetailHandle(h);
+          }}
+          onDataChanged={onDataChanged}
+        />
+      )}
+      {!detailHandle && !createMode && (
+        <button className="fab-add-person" onClick={() => setCreateMode(true)} title="Add new person">+</button>
       )}
     </div>
   );
