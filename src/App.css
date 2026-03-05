@@ -519,3 +519,141 @@
 .pdp-btn-cancel:hover {
   background: #f8fafc;
 }
+
+/* ── PersonSelect (inline person picker) ─────────────────────── */
+
+.person-select {
+  margin-bottom: 8px;
+}
+
+.ps-label {
+  display: block;
+  font-size: 0.82rem;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.ps-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.ps-selected {
+  font-size: 0.9rem;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.ps-empty {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  font-style: italic;
+  flex: 1;
+}
+
+.ps-buttons {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ps-btn-change {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  cursor: pointer;
+  color: #475569;
+}
+
+.ps-btn-change:hover {
+  background: #e2e8f0;
+}
+
+.ps-btn-clear {
+  font-size: 0.9rem;
+  padding: 0 5px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #94a3b8;
+  line-height: 1;
+}
+
+.ps-btn-clear:hover {
+  color: #ef4444;
+}
+
+.ps-dropdown {
+  margin-top: 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.ps-search {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.85rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ps-search:focus {
+  background: #f8fafc;
+}
+
+.ps-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ps-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.83rem;
+}
+
+.ps-item:hover,
+.ps-item.active {
+  background: #eff6ff;
+}
+
+.ps-item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ps-item-dates {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.ps-no-results,
+.ps-truncated {
+  padding: 8px;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  text-align: center;
+}

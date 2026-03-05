@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { GrampsData, GrampsPerson, GrampsName } from "../types/gramps";
+import type { GrampsData, GrampsPerson, GrampsName, GrampsFamily } from "../types/gramps";
 import { EVENT_BIRTH, EVENT_DEATH } from "../types/gramps";
 import { getPersonName } from "../utils/treeBuilder";
+import PersonSelect from "./PersonSelect";
 
 /** Gramps EventType numeric values → human-readable labels */
 const EVENT_TYPE_LABELS: Record<number, string> = {
@@ -222,6 +223,8 @@ interface EditFormState {
   birthPlace: string;
   deathDate: string;
   deathPlace: string;
+  fatherHandle: string | null;
+  motherHandle: string | null;
 }
 
 function altNameFromGramps(name: GrampsName): AltNameEdit {
@@ -251,6 +254,17 @@ function buildEditState(person: GrampsPerson, data: GrampsData): EditFormState {
   const birthEvent = allEvents.find((e) => e.typeValue === EVENT_BIRTH);
   const deathEvent = allEvents.find((e) => e.typeValue === EVENT_DEATH);
 
+  // Resolve parents from parent_family_list
+  let editFatherHandle: string | null = null;
+  let editMotherHandle: string | null = null;
+  if (person.parent_family_list.length > 0) {
+    const parentFamily = data.families.get(person.parent_family_list[0]);
+    if (parentFamily) {
+      editFatherHandle = parentFamily.father_handle || null;
+      editMotherHandle = parentFamily.mother_handle || null;
+    }
+  }
+
   return {
     firstName: person.primary_name.first_name,
     surname: primarySurname?.surname || "",
@@ -265,6 +279,8 @@ function buildEditState(person: GrampsPerson, data: GrampsData): EditFormState {
     birthPlace: birthEvent?.place || "",
     deathDate: deathEvent?.date || "",
     deathPlace: deathEvent?.place || "",
+    fatherHandle: editFatherHandle,
+    motherHandle: editMotherHandle,
   };
 }
 
@@ -421,9 +437,113 @@ export default function PersonDetailPanel({
       newPersons.set(handle, personWithRefs);
     }
 
+    // ── Parent / family mutations ──
+    const newFamilies = new Map(data.families);
+    const originalParentFamilyHandle = person.parent_family_list.length > 0 ? person.parent_family_list[0] : null;
+    const originalFamily = originalParentFamilyHandle ? data.families.get(originalParentFamilyHandle) : null;
+
+    const origFather = originalFamily?.father_handle || null;
+    const origMother = originalFamily?.mother_handle || null;
+    const newFather = editForm.fatherHandle;
+    const newMother = editForm.motherHandle;
+    const parentsChanged = origFather !== newFather || origMother !== newMother;
+
+    if (parentsChanged) {
+      if (originalFamily) {
+        // Update existing family
+        const updatedFamily: GrampsFamily = {
+          ...originalFamily,
+          father_handle: newFather || "",
+          mother_handle: newMother || "",
+        };
+        newFamilies.set(originalFamily.handle, updatedFamily);
+
+        // Update family_list on old parents that were removed
+        if (origFather && origFather !== newFather) {
+          const oldFather = newPersons.get(origFather);
+          if (oldFather) {
+            newPersons.set(origFather, {
+              ...oldFather,
+              family_list: oldFather.family_list.filter((h) => h !== originalFamily.handle),
+            });
+          }
+        }
+        if (origMother && origMother !== newMother) {
+          const oldMother = newPersons.get(origMother);
+          if (oldMother) {
+            newPersons.set(origMother, {
+              ...oldMother,
+              family_list: oldMother.family_list.filter((h) => h !== originalFamily.handle),
+            });
+          }
+        }
+
+        // Add family to new parents' family_list
+        if (newFather && newFather !== origFather) {
+          const father = newPersons.get(newFather);
+          if (father && !father.family_list.includes(originalFamily.handle)) {
+            newPersons.set(newFather, {
+              ...father,
+              family_list: [...father.family_list, originalFamily.handle],
+            });
+          }
+        }
+        if (newMother && newMother !== origMother) {
+          const mother = newPersons.get(newMother);
+          if (mother && !mother.family_list.includes(originalFamily.handle)) {
+            newPersons.set(newMother, {
+              ...mother,
+              family_list: [...mother.family_list, originalFamily.handle],
+            });
+          }
+        }
+      } else if (newFather || newMother) {
+        // Create a new family
+        const familyHandle = generateHandle();
+        const newFamily: GrampsFamily = {
+          _class: "Family",
+          handle: familyHandle,
+          gramps_id: "",
+          father_handle: newFather || "",
+          mother_handle: newMother || "",
+          child_ref_list: [{ ref: handle }],
+          event_ref_list: [],
+        };
+        newFamilies.set(familyHandle, newFamily);
+
+        // Add family to person's parent_family_list
+        const currentPerson = newPersons.get(handle)!;
+        newPersons.set(handle, {
+          ...currentPerson,
+          parent_family_list: [...currentPerson.parent_family_list, familyHandle],
+        });
+
+        // Add family to parents' family_list
+        if (newFather) {
+          const father = newPersons.get(newFather);
+          if (father) {
+            newPersons.set(newFather, {
+              ...father,
+              family_list: [...father.family_list, familyHandle],
+            });
+          }
+        }
+        if (newMother) {
+          const mother = newPersons.get(newMother);
+          if (mother) {
+            newPersons.set(newMother, {
+              ...mother,
+              family_list: [...mother.family_list, familyHandle],
+            });
+          }
+        }
+      }
+    }
+
     onDataChanged({
       ...data,
       persons: newPersons,
+      families: newFamilies,
       events: newEvents,
       places: newPlaces,
     });
@@ -696,6 +816,24 @@ export default function PersonDetailPanel({
                 onChange={(e) => updateField("deathPlace", e.target.value)}
               />
             </label>
+          </div>
+
+          <div className="pdp-edit-section">
+            <h3>Parents</h3>
+            <PersonSelect
+              data={data}
+              value={editForm.fatherHandle}
+              onChange={(h) => setEditForm((prev) => prev ? { ...prev, fatherHandle: h } : prev)}
+              excludeHandles={[handle, ...(editForm.motherHandle ? [editForm.motherHandle] : [])]}
+              label="Father"
+            />
+            <PersonSelect
+              data={data}
+              value={editForm.motherHandle}
+              onChange={(h) => setEditForm((prev) => prev ? { ...prev, motherHandle: h } : prev)}
+              excludeHandles={[handle, ...(editForm.fatherHandle ? [editForm.fatherHandle] : [])]}
+              label="Mother"
+            />
           </div>
 
           <div className="pdp-edit-actions">
