@@ -1,4 +1,5 @@
-import type { GrampsData, GrampsPerson } from "../types/gramps";
+import { useState } from "react";
+import type { GrampsData, GrampsPerson, GrampsName } from "../types/gramps";
 import { EVENT_BIRTH, EVENT_DEATH } from "../types/gramps";
 import { getPersonName } from "../utils/treeBuilder";
 
@@ -51,13 +52,28 @@ const EVENT_TYPE_LABELS: Record<number, string> = {
   45: "Stillbirth",
 };
 
+/** Gramps NameType values */
+const NAME_TYPE_LABELS: Record<number, string> = {
+  0: "Unknown",
+  1: "Also Known As",
+  2: "Birth Name",
+  3: "Married Name",
+};
+
+const NAME_TYPE_OPTIONS = [
+  { value: 2, label: "Birth Name" },
+  { value: 3, label: "Married Name" },
+  { value: 1, label: "Also Known As" },
+  { value: 0, label: "Unknown" },
+];
+
 interface PersonDetailPanelProps {
   handle: string;
   data: GrampsData;
   includePrivate: boolean;
   onClose: () => void;
   onNavigate: (handle: string) => void;
-  onTogglePrivate: (handle: string) => void;
+  onDataChanged: (data: GrampsData) => void;
 }
 
 function formatDate(date: { dateval: [number, number, number, boolean]; text: string } | undefined): string {
@@ -71,10 +87,39 @@ function formatDate(date: { dateval: [number, number, number, boolean]; text: st
   return parts.join("-");
 }
 
+/** Parse a date string (DD-MM-YYYY, MM-YYYY, or YYYY) into a dateval tuple */
+function parseDateString(str: string): [number, number, number, boolean] {
+  const trimmed = str.trim();
+  if (!trimmed) return [0, 0, 0, false];
+  const parts = trimmed.split("-").map(Number);
+  if (parts.length === 3) return [parts[0], parts[1], parts[2], false]; // DD-MM-YYYY
+  if (parts.length === 2) return [0, parts[0], parts[1], false]; // MM-YYYY
+  if (parts.length === 1) return [0, 0, parts[0], false]; // YYYY
+  return [0, 0, 0, false];
+}
+
 function genderIcon(gender: number): string {
   if (gender === 0) return "\u2640"; // female
   if (gender === 1) return "\u2642"; // male
   return "?";
+}
+
+/** Format a GrampsName for display */
+function formatGrampsName(name: GrampsName): string {
+  const first = name.first_name || "";
+  const primarySurname = name.surname_list.find((s) => s.primary) || name.surname_list[0];
+  const prefix = primarySurname?.prefix || "";
+  const surname = primarySurname?.surname || "";
+  const fullSurname = prefix ? `${prefix} ${surname}` : surname;
+  return `${first} ${fullSurname}`.trim();
+}
+
+/** Get a human-readable label for a name type */
+function nameTypeLabel(name: GrampsName): string {
+  if (name.type) {
+    return name.type.string || NAME_TYPE_LABELS[name.type.value] || "Unknown";
+  }
+  return "Unknown";
 }
 
 interface ResolvedEvent {
@@ -155,24 +200,237 @@ function PersonLink({
   );
 }
 
+interface AltNameEdit {
+  firstName: string;
+  surname: string;
+  surnamePrefix: string;
+  suffix: string;
+  typeValue: number;
+}
+
+interface EditFormState {
+  firstName: string;
+  surname: string;
+  surnamePrefix: string;
+  suffix: string;
+  title: string;
+  gender: number;
+  grampsId: string;
+  isPrivate: boolean;
+  alternateNames: AltNameEdit[];
+  birthDate: string;
+  birthPlace: string;
+  deathDate: string;
+  deathPlace: string;
+}
+
+function altNameFromGramps(name: GrampsName): AltNameEdit {
+  const primarySurname = name.surname_list.find((s) => s.primary) || name.surname_list[0];
+  return {
+    firstName: name.first_name || "",
+    surname: primarySurname?.surname || "",
+    surnamePrefix: primarySurname?.prefix || "",
+    suffix: name.suffix || "",
+    typeValue: name.type?.value ?? 0,
+  };
+}
+
+function altNameToGramps(alt: AltNameEdit): GrampsName {
+  return {
+    first_name: alt.firstName,
+    surname_list: [{ surname: alt.surname, prefix: alt.surnamePrefix, primary: true }],
+    suffix: alt.suffix,
+    title: "",
+    type: { value: alt.typeValue, string: NAME_TYPE_LABELS[alt.typeValue] || "" },
+  };
+}
+
+function buildEditState(person: GrampsPerson, data: GrampsData): EditFormState {
+  const primarySurname = person.primary_name.surname_list[0];
+  const allEvents = resolveEvents(person, data);
+  const birthEvent = allEvents.find((e) => e.typeValue === EVENT_BIRTH);
+  const deathEvent = allEvents.find((e) => e.typeValue === EVENT_DEATH);
+
+  return {
+    firstName: person.primary_name.first_name,
+    surname: primarySurname?.surname || "",
+    surnamePrefix: primarySurname?.prefix || "",
+    suffix: person.primary_name.suffix || "",
+    title: person.primary_name.title || "",
+    gender: person.gender,
+    grampsId: person.gramps_id,
+    isPrivate: person.private,
+    alternateNames: (person.alternate_names || []).map(altNameFromGramps),
+    birthDate: birthEvent?.date || "",
+    birthPlace: birthEvent?.place || "",
+    deathDate: deathEvent?.date || "",
+    deathPlace: deathEvent?.place || "",
+  };
+}
+
+/** Find the event handle for a person's birth or death event */
+function findEventHandle(person: GrampsPerson, data: GrampsData, eventType: number): string | null {
+  for (const ref of person.event_ref_list) {
+    const event = data.events.get(ref.ref);
+    if (event && event.type.value === eventType) return ref.ref;
+  }
+  return null;
+}
+
+/** Find a place handle by title, or return null */
+function findPlaceByTitle(data: GrampsData, title: string): string | null {
+  for (const [, place] of data.places) {
+    if (place.title === title) return place.handle;
+  }
+  return null;
+}
+
+/** Generate a unique handle */
+function generateHandle(): string {
+  return "_" + Math.random().toString(36).slice(2, 14);
+}
+
 export default function PersonDetailPanel({
   handle,
   data,
   includePrivate,
   onClose,
   onNavigate,
-  onTogglePrivate,
+  onDataChanged,
 }: PersonDetailPanelProps) {
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
+
   if (!isVisible(handle, data, includePrivate)) return null;
   const person = data.persons.get(handle)!;
 
   const name = getPersonName(person);
+  const alternateNames = person.alternate_names || [];
   const allEvents = resolveEvents(person, data);
   const birthEvent = allEvents.find((e) => e.typeValue === EVENT_BIRTH);
   const deathEvent = allEvents.find((e) => e.typeValue === EVENT_DEATH);
   const otherEvents = allEvents.filter(
     (e) => e.typeValue !== EVENT_BIRTH && e.typeValue !== EVENT_DEATH
   );
+
+  const startEditing = () => {
+    setEditForm(buildEditState(person, data));
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setEditForm(null);
+  };
+
+  const saveEdits = () => {
+    if (!editForm) return;
+
+    // Update person
+    const updatedPerson: GrampsPerson = {
+      ...person,
+      gramps_id: editForm.grampsId,
+      gender: editForm.gender,
+      private: editForm.isPrivate,
+      primary_name: {
+        ...person.primary_name,
+        first_name: editForm.firstName,
+        suffix: editForm.suffix,
+        title: editForm.title,
+        surname_list: [
+          {
+            ...(person.primary_name.surname_list[0] || { primary: true }),
+            surname: editForm.surname,
+            prefix: editForm.surnamePrefix,
+          },
+          ...person.primary_name.surname_list.slice(1),
+        ],
+      },
+      alternate_names: editForm.alternateNames
+        .filter((a) => a.firstName.trim() || a.surname.trim())
+        .map(altNameToGramps),
+    };
+
+    const newPersons = new Map(data.persons);
+    newPersons.set(handle, updatedPerson);
+
+    const newEvents = new Map(data.events);
+    const newPlaces = new Map(data.places);
+    let updatedEventRefs = [...person.event_ref_list];
+
+    // Helper: resolve or create a place
+    const resolvePlace = (title: string): string => {
+      if (!title.trim()) return "";
+      const existing = findPlaceByTitle(data, title);
+      if (existing) return existing;
+      // Check if we already created it in this save
+      for (const [, p] of newPlaces) {
+        if (p.title === title) return p.handle;
+      }
+      const placeHandle = generateHandle();
+      newPlaces.set(placeHandle, {
+        _class: "Place",
+        handle: placeHandle,
+        gramps_id: "",
+        title,
+        name: { value: title },
+      });
+      return placeHandle;
+    };
+
+    // Helper: update or create a vital event
+    const updateVitalEvent = (eventType: number, dateStr: string, placeStr: string) => {
+      const existingHandle = findEventHandle(person, data, eventType);
+      const hasData = dateStr.trim() || placeStr.trim();
+
+      if (existingHandle) {
+        const existing = data.events.get(existingHandle)!;
+        const dateval = parseDateString(dateStr);
+        const sortval = dateval[2] * 10000 + dateval[1] * 100 + dateval[0];
+        const placeHandle = placeStr.trim() ? resolvePlace(placeStr) : "";
+        newEvents.set(existingHandle, {
+          ...existing,
+          date: { dateval, text: "", sortval },
+          place: placeHandle,
+        });
+      } else if (hasData) {
+        // Create new event
+        const eventHandle = generateHandle();
+        const dateval = parseDateString(dateStr);
+        const sortval = dateval[2] * 10000 + dateval[1] * 100 + dateval[0];
+        const placeHandle = placeStr.trim() ? resolvePlace(placeStr) : "";
+        newEvents.set(eventHandle, {
+          _class: "Event",
+          handle: eventHandle,
+          gramps_id: "",
+          type: { value: eventType, string: eventType === EVENT_BIRTH ? "Birth" : "Death" },
+          date: { dateval, text: "", sortval },
+          place: placeHandle,
+          description: "",
+        });
+        updatedEventRefs = [...updatedEventRefs, { ref: eventHandle, role: { value: 0 } }];
+      }
+    };
+
+    updateVitalEvent(EVENT_BIRTH, editForm.birthDate, editForm.birthPlace);
+    updateVitalEvent(EVENT_DEATH, editForm.deathDate, editForm.deathPlace);
+
+    // Update event refs if new events were created
+    if (updatedEventRefs.length !== person.event_ref_list.length) {
+      const personWithRefs = { ...newPersons.get(handle)!, event_ref_list: updatedEventRefs };
+      newPersons.set(handle, personWithRefs);
+    }
+
+    onDataChanged({
+      ...data,
+      persons: newPersons,
+      events: newEvents,
+      places: newPlaces,
+    });
+
+    setEditing(false);
+    setEditForm(null);
+  };
 
   // Parents
   let fatherHandle: string | null = null;
@@ -214,6 +472,246 @@ export default function PersonDetailPanel({
     familyUnits.push({ spouseHandle: validSpouse, childHandles });
   }
 
+  // ── Edit mode ──
+  if (editing && editForm) {
+    const updateField = (field: keyof EditFormState, value: string | number | boolean) => {
+      setEditForm((prev) => prev ? { ...prev, [field]: value } : prev);
+    };
+
+    const updateAltName = (index: number, field: keyof AltNameEdit, value: string | number) => {
+      setEditForm((prev) => {
+        if (!prev) return prev;
+        const updated = [...prev.alternateNames];
+        updated[index] = { ...updated[index], [field]: value };
+        return { ...prev, alternateNames: updated };
+      });
+    };
+
+    const addAltName = () => {
+      setEditForm((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          alternateNames: [
+            ...prev.alternateNames,
+            { firstName: "", surname: "", surnamePrefix: "", suffix: "", typeValue: 3 }, // default to Married Name
+          ],
+        };
+      });
+    };
+
+    const removeAltName = (index: number) => {
+      setEditForm((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          alternateNames: prev.alternateNames.filter((_, i) => i !== index),
+        };
+      });
+    };
+
+    return (
+      <div className="person-detail-panel">
+        <div className="pdp-header">
+          <button className="pdp-close" onClick={cancelEditing} title="Cancel">
+            &times;
+          </button>
+          <div className="pdp-name">Edit Person</div>
+        </div>
+
+        <div className="pdp-edit-form">
+          <div className="pdp-edit-section">
+            <h3>Identity</h3>
+            <label className="pdp-edit-field">
+              <span>First name</span>
+              <input
+                type="text"
+                value={editForm.firstName}
+                onChange={(e) => updateField("firstName", e.target.value)}
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Surname prefix</span>
+              <input
+                type="text"
+                value={editForm.surnamePrefix}
+                onChange={(e) => updateField("surnamePrefix", e.target.value)}
+                placeholder="e.g. von, de"
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Surname</span>
+              <input
+                type="text"
+                value={editForm.surname}
+                onChange={(e) => updateField("surname", e.target.value)}
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Suffix</span>
+              <input
+                type="text"
+                value={editForm.suffix}
+                onChange={(e) => updateField("suffix", e.target.value)}
+                placeholder="e.g. Jr., III"
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Title</span>
+              <input
+                type="text"
+                value={editForm.title}
+                onChange={(e) => updateField("title", e.target.value)}
+                placeholder="e.g. Dr., Rev."
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Gender</span>
+              <select
+                value={editForm.gender}
+                onChange={(e) => updateField("gender", Number(e.target.value))}
+              >
+                <option value={0}>Female</option>
+                <option value={1}>Male</option>
+                <option value={2}>Unknown</option>
+              </select>
+            </label>
+            <label className="pdp-edit-field">
+              <span>Gramps ID</span>
+              <input
+                type="text"
+                value={editForm.grampsId}
+                onChange={(e) => updateField("grampsId", e.target.value)}
+              />
+            </label>
+            <label className="pdp-edit-checkbox">
+              <input
+                type="checkbox"
+                checked={editForm.isPrivate}
+                onChange={(e) => updateField("isPrivate", e.target.checked)}
+              />
+              <span>Private</span>
+            </label>
+          </div>
+
+          <div className="pdp-edit-section">
+            <h3>Alternate Names</h3>
+            {editForm.alternateNames.map((alt, i) => (
+              <div key={i} className="pdp-alt-name-edit">
+                <div className="pdp-alt-name-header">
+                  <select
+                    value={alt.typeValue}
+                    onChange={(e) => updateAltName(i, "typeValue", Number(e.target.value))}
+                    className="pdp-alt-name-type"
+                  >
+                    {NAME_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="pdp-alt-name-remove"
+                    onClick={() => removeAltName(i)}
+                    title="Remove this name"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <label className="pdp-edit-field">
+                  <span>First name</span>
+                  <input
+                    type="text"
+                    value={alt.firstName}
+                    onChange={(e) => updateAltName(i, "firstName", e.target.value)}
+                  />
+                </label>
+                <label className="pdp-edit-field">
+                  <span>Surname prefix</span>
+                  <input
+                    type="text"
+                    value={alt.surnamePrefix}
+                    onChange={(e) => updateAltName(i, "surnamePrefix", e.target.value)}
+                    placeholder="e.g. von, de"
+                  />
+                </label>
+                <label className="pdp-edit-field">
+                  <span>Surname</span>
+                  <input
+                    type="text"
+                    value={alt.surname}
+                    onChange={(e) => updateAltName(i, "surname", e.target.value)}
+                  />
+                </label>
+                <label className="pdp-edit-field">
+                  <span>Suffix</span>
+                  <input
+                    type="text"
+                    value={alt.suffix}
+                    onChange={(e) => updateAltName(i, "suffix", e.target.value)}
+                  />
+                </label>
+              </div>
+            ))}
+            <button className="pdp-btn-add-alt" onClick={addAltName}>
+              + Add alternate name
+            </button>
+          </div>
+
+          <div className="pdp-edit-section">
+            <h3>Birth</h3>
+            <label className="pdp-edit-field">
+              <span>Date</span>
+              <input
+                type="text"
+                value={editForm.birthDate}
+                onChange={(e) => updateField("birthDate", e.target.value)}
+                placeholder="DD-MM-YYYY"
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Place</span>
+              <input
+                type="text"
+                value={editForm.birthPlace}
+                onChange={(e) => updateField("birthPlace", e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="pdp-edit-section">
+            <h3>Death</h3>
+            <label className="pdp-edit-field">
+              <span>Date</span>
+              <input
+                type="text"
+                value={editForm.deathDate}
+                onChange={(e) => updateField("deathDate", e.target.value)}
+                placeholder="DD-MM-YYYY"
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Place</span>
+              <input
+                type="text"
+                value={editForm.deathPlace}
+                onChange={(e) => updateField("deathPlace", e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="pdp-edit-actions">
+            <button className="pdp-btn-save" onClick={saveEdits}>
+              Save
+            </button>
+            <button className="pdp-btn-cancel" onClick={cancelEditing}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── View mode ──
   return (
     <div className="person-detail-panel">
       <div className="pdp-header">
@@ -225,14 +723,31 @@ export default function PersonDetailPanel({
           {name}
         </div>
         <div className="pdp-gramps-id">{person.gramps_id}</div>
-        <button
-          className={`pdp-lock-btn ${person.private ? "pdp-lock-closed" : "pdp-lock-open"}`}
-          onClick={() => onTogglePrivate(handle)}
-          title={person.private ? "Private — click to make public" : "Public — click to make private"}
-        >
-          {person.private ? "\uD83D\uDD12" : "\uD83D\uDD13"}
-        </button>
+        <div className="pdp-header-actions">
+          <span
+            className={`pdp-lock-icon ${person.private ? "pdp-lock-closed" : "pdp-lock-open"}`}
+            title={person.private ? "Private" : "Public"}
+          >
+            {person.private ? "\uD83D\uDD12" : "\uD83D\uDD13"}
+          </span>
+          <button className="pdp-edit-btn" onClick={startEditing} title="Edit person">
+            &#x270E;
+          </button>
+        </div>
       </div>
+
+      {/* Alternate names */}
+      {alternateNames.length > 0 && (
+        <div className="pdp-section">
+          <h3>Also Known As</h3>
+          {alternateNames.map((altName, i) => (
+            <div key={i} className="pdp-alt-name">
+              <span className="pdp-alt-name-label">{nameTypeLabel(altName)}</span>
+              {formatGrampsName(altName)}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Vital events */}
       <div className="pdp-section">
@@ -240,7 +755,7 @@ export default function PersonDetailPanel({
         {birthEvent ? (
           <div className="pdp-event">
             <strong>Birth</strong>
-            {birthEvent.date && <span> — {birthEvent.date}</span>}
+            {birthEvent.date && <span> &mdash; {birthEvent.date}</span>}
             {birthEvent.place && <div className="pdp-place">{birthEvent.place}</div>}
           </div>
         ) : (
@@ -249,7 +764,7 @@ export default function PersonDetailPanel({
         {deathEvent ? (
           <div className="pdp-event">
             <strong>Death</strong>
-            {deathEvent.date && <span> — {deathEvent.date}</span>}
+            {deathEvent.date && <span> &mdash; {deathEvent.date}</span>}
             {deathEvent.place && <div className="pdp-place">{deathEvent.place}</div>}
           </div>
         ) : (
@@ -264,7 +779,7 @@ export default function PersonDetailPanel({
           {otherEvents.map((e, i) => (
             <div key={i} className="pdp-event">
               <strong>{e.typeString}</strong>
-              {e.date && <span> — {e.date}</span>}
+              {e.date && <span> &mdash; {e.date}</span>}
               {e.place && <div className="pdp-place">{e.place}</div>}
               {e.description && <div className="pdp-desc">{e.description}</div>}
             </div>

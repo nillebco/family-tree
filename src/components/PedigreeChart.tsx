@@ -64,18 +64,6 @@ export default function PedigreeChart({
     });
   }, []);
 
-  const togglePrivate = useCallback(
-    (handle: string) => {
-      const person = data.persons.get(handle);
-      if (!person) return;
-      const updated = { ...person, private: !person.private };
-      const newPersons = new Map(data.persons);
-      newPersons.set(handle, updated);
-      onDataChanged({ ...data, persons: newPersons });
-    },
-    [data, onDataChanged]
-  );
-
   const handleExport = useCallback(() => {
     const ndjson = exportGrampsNdjson(data);
     const blob = new Blob([ndjson], { type: "application/x-ndjson" });
@@ -403,7 +391,7 @@ export default function PedigreeChart({
           includePrivate={includePrivate}
           onClose={() => setDetailHandle(null)}
           onNavigate={(h) => setDetailHandle(h)}
-          onTogglePrivate={togglePrivate}
+          onDataChanged={onDataChanged}
         />
       )}
     </div>

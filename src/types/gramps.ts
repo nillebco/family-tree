@@ -10,11 +10,17 @@ export interface GrampsSurname {
   primary: boolean;
 }
 
+export interface GrampsNameType {
+  value: number; // 0=Unknown, 1=Birth Name (default), 2=Married Name, 3=Also Known As
+  string: string;
+}
+
 export interface GrampsName {
   first_name: string;
   surname_list: GrampsSurname[];
   suffix: string;
   title: string;
+  type?: GrampsNameType;
 }
 
 export interface GrampsEventRef {
@@ -29,6 +35,7 @@ export interface GrampsPerson {
   private: boolean;
   gender: number; // 0=female, 1=male, 2=unknown
   primary_name: GrampsName;
+  alternate_names?: GrampsName[];
   event_ref_list: GrampsEventRef[];
   family_list: string[];
   parent_family_list: string[];

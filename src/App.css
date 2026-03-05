@@ -9,7 +9,7 @@
   position: fixed;
   top: 0;
   right: 0;
-  z-index: 200;
+  z-index: 90;
   width: 200px;
   height: 200px;
   overflow: hidden;
@@ -216,30 +216,26 @@
   margin-top: 0.2rem;
 }
 
-.pdp-lock-btn {
+.pdp-lock-icon {
   display: inline-flex;
   align-items: center;
-  margin-top: 0.4rem;
-  padding: 0.2rem 0.5rem;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
   font-size: 1rem;
   border-radius: 4px;
   border: 1px solid #d1d5db;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  box-sizing: border-box;
 }
 
-.pdp-lock-closed {
+.pdp-lock-icon.pdp-lock-closed {
   background: #fef3c7;
   border-color: #fcd34d;
 }
 
-.pdp-lock-open {
+.pdp-lock-icon.pdp-lock-open {
   background: #ecfdf5;
   border-color: #6ee7b7;
-}
-
-.pdp-lock-btn:hover {
-  filter: brightness(0.95);
 }
 
 .pdp-section {
@@ -306,4 +302,220 @@
 
 .pdp-child {
   padding-left: 0.75rem;
+}
+
+/* ── Edit button & form ──────────────────────────────────────── */
+
+.pdp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.pdp-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+  background: #f0f7ff;
+  color: #2563eb;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.pdp-edit-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.pdp-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pdp-edit-section {
+  margin-bottom: 0.75rem;
+}
+
+.pdp-edit-section h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.4rem;
+}
+
+.pdp-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.pdp-edit-field span {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.pdp-edit-field input,
+.pdp-edit-field select {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #334155;
+  transition: border-color 0.15s;
+}
+
+.pdp-edit-field input:focus,
+.pdp-edit-field select:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.15);
+}
+
+/* ── Alternate names (view mode) ─────────────────────────────── */
+
+.pdp-alt-name {
+  font-size: 0.9rem;
+  color: #334155;
+  margin-bottom: 0.35rem;
+}
+
+.pdp-alt-name-label {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-style: italic;
+  margin-right: 0.4rem;
+}
+
+/* ── Alternate names (edit mode) ─────────────────────────────── */
+
+.pdp-alt-name-edit {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafbfc;
+}
+
+.pdp-alt-name-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.pdp-alt-name-type {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.82rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #334155;
+}
+
+.pdp-alt-name-remove {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 0.3rem;
+  line-height: 1;
+}
+
+.pdp-alt-name-remove:hover {
+  color: #ef4444;
+}
+
+.pdp-btn-add-alt {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.82rem;
+  border: 1px dashed #d1d5db;
+  border-radius: 4px;
+  background: none;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pdp-btn-add-alt:hover {
+  background: #f0f7ff;
+  color: #2563eb;
+  border-color: #93c5fd;
+}
+
+.pdp-edit-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+}
+
+.pdp-edit-checkbox input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #4285f4;
+  cursor: pointer;
+}
+
+.pdp-edit-checkbox span {
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.pdp-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.pdp-btn-save {
+  flex: 1;
+  padding: 0.45rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  background: #4285f4;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pdp-btn-save:hover {
+  background: #3367d6;
+}
+
+.pdp-btn-cancel {
+  flex: 1;
+  padding: 0.45rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pdp-btn-cancel:hover {
+  background: #f8fafc;
 }
