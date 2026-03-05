@@ -27,6 +27,10 @@ Run `npm run build` (which runs `tsc -b` then `vite build`) to verify there are 
 
 When adding or modifying utility functions (anything in `src/utils/`), add or update corresponding tests. Test files live next to their source files with a `.test.ts` suffix (e.g. `treeBuilder.ts` → `treeBuilder.test.ts`).
 
+### Check linter and tests for every increment
+
+Run `npm run lint` and `npm test` after every code change, no matter how small. Do not batch multiple changes before checking — verify after each increment.
+
 ### Keep tests green
 
 Never commit code that breaks existing tests. If a change requires updating tests, update them to reflect the new correct behavior — do not delete tests to make the suite pass.

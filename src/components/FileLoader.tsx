@@ -26,7 +26,7 @@ export default function FileLoader({ onDataLoaded }: FileLoaderProps) {
   return (
     <div className="file-loader">
       <label>
-        Load Gramps Web NDJSON export:
+        <span className="file-loader-btn">Load GrampsWeb NDJSON export</span>
         <input type="file" accept=".json,.ndjson" onChange={handleFile} />
       </label>
     </div>

@@ -20,6 +20,7 @@ function truncate(text: string, maxWidth: number, fontSize: number): string {
 interface PedigreeChartProps {
   data: GrampsData;
   selectedHandle: string;
+  initialCreateMode?: boolean;
   onBack: () => void;
   onDataChanged: (data: GrampsData) => void;
 }
@@ -27,6 +28,7 @@ interface PedigreeChartProps {
 export default function PedigreeChart({
   data,
   selectedHandle,
+  initialCreateMode,
   onBack,
   onDataChanged,
 }: PedigreeChartProps) {
@@ -37,9 +39,10 @@ export default function PedigreeChart({
   const [zoom, setZoom] = useState(1);
   const [maxUp, setMaxUp] = useState(4);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const [detailHandle, setDetailHandle] = useState<string | null>(null);
-  const [createMode, setCreateMode] = useState(false);
+  const [createMode, setCreateMode] = useState(!!initialCreateMode);
   const [expandedSiblings, setExpandedSiblings] = useState<Set<string>>(
     () => new Set()
   );
@@ -116,6 +119,7 @@ export default function PedigreeChart({
     (e: React.PointerEvent<SVGSVGElement>) => {
       if (e.button !== 0) return;
       e.currentTarget.setPointerCapture(e.pointerId);
+      setIsPanning(true);
       panRef.current = {
         startX: e.clientX,
         startY: e.clientY,
@@ -139,6 +143,7 @@ export default function PedigreeChart({
 
   const handlePointerUp = useCallback(() => {
     panRef.current = null;
+    setIsPanning(false);
   }, []);
 
   const PANEL_WIDTH = 360;
@@ -194,7 +199,7 @@ export default function PedigreeChart({
         height={svgH}
         viewBox={`0 0 ${svgW} ${svgH}`}
         style={{
-          cursor: panRef.current ? "grabbing" : "grab",
+          cursor: isPanning ? "grabbing" : "grab",
           touchAction: "none",
         }}
         onPointerDown={handlePointerDown}

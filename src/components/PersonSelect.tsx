@@ -38,9 +38,6 @@ export default function PersonSelect({
     );
   }, [persons, filter, excludeSet]);
 
-  useEffect(() => {
-    setActiveIndex(-1);
-  }, [filtered]);
 
   useEffect(() => {
     if (open && inputRef.current) {
@@ -126,7 +123,7 @@ export default function PersonSelect({
             className="ps-search"
             placeholder="Search..."
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => { setFilter(e.target.value); setActiveIndex(-1); }}
             onKeyDown={handleKeyDown}
           />
           <div className="ps-list" ref={listRef}>

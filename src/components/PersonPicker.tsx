@@ -23,10 +23,6 @@ export default function PersonPicker({ data, onSelect }: PersonPickerProps) {
     );
   }, [persons, filter]);
 
-  // Reset active index when filtered results change
-  useEffect(() => {
-    setActiveIndex(-1);
-  }, [filtered]);
 
   // Scroll active item into view
   useEffect(() => {
@@ -55,7 +51,7 @@ export default function PersonPicker({ data, onSelect }: PersonPickerProps) {
         type="text"
         placeholder="Search persons..."
         value={filter}
-        onChange={(e) => setFilter(e.target.value)}
+        onChange={(e) => { setFilter(e.target.value); setActiveIndex(-1); }}
         onKeyDown={handleKeyDown}
         className="person-search"
         autoFocus

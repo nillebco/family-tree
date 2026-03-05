@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GrampsData, GrampsPerson, GrampsName, GrampsFamily } from "../types/gramps";
 import { EVENT_BIRTH, EVENT_DEATH } from "../types/gramps";
 import { getPersonName } from "../utils/treeBuilder";
@@ -365,6 +365,13 @@ export default function PersonDetailPanel({
 }: PersonDetailPanelProps) {
   const [editing, setEditing] = useState(!!createMode);
   const [editForm, setEditForm] = useState<EditFormState | null>(createMode ? buildEmptyEditState() : null);
+  const firstNameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && firstNameRef.current) {
+      firstNameRef.current.focus();
+    }
+  }, [editing]);
 
   if (!createMode && !isVisible(handle, data, includePrivate)) return null;
   const person = createMode ? null : data.persons.get(handle)!;
@@ -797,6 +804,7 @@ export default function PersonDetailPanel({
             <label className="pdp-edit-field">
               <span>First name</span>
               <input
+                ref={firstNameRef}
                 type="text"
                 value={editForm.firstName}
                 onChange={(e) => updateField("firstName", e.target.value)}

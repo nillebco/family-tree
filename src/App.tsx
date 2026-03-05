@@ -8,7 +8,7 @@ import "./App.css";
 type AppState =
   | { step: "load" }
   | { step: "pick"; data: GrampsData }
-  | { step: "chart"; data: GrampsData; selectedHandle: string };
+  | { step: "chart"; data: GrampsData; selectedHandle: string; initialCreateMode?: boolean };
 
 export default function App() {
   const [state, setState] = useState<AppState>({ step: "load" });
@@ -34,6 +34,22 @@ export default function App() {
           <FileLoader
             onDataLoaded={(data) => setState({ step: "pick", data })}
           />
+          <div className="new-tree-divider">or</div>
+          <button
+            className="btn-new-tree"
+            onClick={() => {
+              const emptyData: GrampsData = {
+                persons: new Map(),
+                families: new Map(),
+                events: new Map(),
+                places: new Map(),
+                rawOtherLines: [],
+              };
+              setState({ step: "chart", data: emptyData, selectedHandle: "", initialCreateMode: true });
+            }}
+          >
+            Create a new tree
+          </button>
         </div>
       )}
       {state.step === "pick" && (
@@ -55,6 +71,7 @@ export default function App() {
         <PedigreeChart
           data={state.data}
           selectedHandle={state.selectedHandle}
+          initialCreateMode={state.initialCreateMode}
           onBack={() => setState({ step: "pick", data: state.data })}
           onDataChanged={(newData) =>
             setState({ step: "chart", data: newData, selectedHandle: state.selectedHandle })

@@ -1,6 +1,6 @@
 # Family Tree Pedigree Viewer
 
-A web application for visualizing genealogical data as an interactive hourglass chart. Load data exported from [Gramps](https://gramps-project.org/) and explore your family tree with ancestors, descendants, and siblings.
+A web application for visualizing genealogical data as an interactive hourglass chart. Load data exported from [Gramps](https://gramps-project.org/) and explore your family tree with ancestors, descendants, and siblings. Or create a new tree!
 
 ## Features
 
