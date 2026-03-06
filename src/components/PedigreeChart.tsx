@@ -182,7 +182,11 @@ export default function PedigreeChart({
             ))}
           </select>
         </label>
-        <span>Zoom: {Math.round(zoom * 100)}%</span>
+        <div className="chart-zoom-controls">
+          <button onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.25).toFixed(2)))} title="Zoom out">−</button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} title="Zoom in">+</button>
+        </div>
         <button
           onClick={() => {
             setZoom(1);
