@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "family-tree-pedigree-viewer",
+  "name": "family-tree",
   "compatibility_date": "2025-08-27",
   "assets": {
     "directory": "./dist",
