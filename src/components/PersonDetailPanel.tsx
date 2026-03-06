@@ -68,6 +68,13 @@ const NAME_TYPE_OPTIONS = [
   { value: 0, label: "Unknown" },
 ];
 
+const EVENT_TYPE_OPTIONS = [
+  { value: 0, label: "Custom" },
+  ...Object.entries(EVENT_TYPE_LABELS)
+    .map(([v, label]) => ({ value: Number(v), label }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
+];
+
 interface PersonDetailPanelProps {
   handle: string;
   createMode?: boolean;
@@ -372,6 +379,7 @@ export default function PersonDetailPanel({
   const [editForm, setEditForm] = useState<EditFormState | null>(createMode ? buildEmptyEditState() : null);
   const [selectedEventHandle, setSelectedEventHandle] = useState<string | null>(null);
   const [editingEventFields, setEditingEventFields] = useState<{ date: string; place: string } | null>(null);
+  const [addingEvent, setAddingEvent] = useState<{ typeValue: number; customString: string; date: string; place: string } | null>(null);
   const firstNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1271,19 +1279,116 @@ export default function PersonDetailPanel({
       </div>
 
       {/* Other events */}
-      {otherEvents.length > 0 && (
-        <div className="pdp-section">
-          <h3>Other Events</h3>
-          {otherEvents.map((e) => (
-            <button key={e.handle} className="pdp-event pdp-event-row" onClick={() => setSelectedEventHandle(e.handle)}>
-              <span className="pdp-event-label"><strong>{e.typeString}</strong>{e.date && <span> &mdash; {e.date}</span>}</span>
-              <span className="pdp-event-arrow">›</span>
-              {e.place && <div className="pdp-place">{e.place}</div>}
-              {e.description && <div className="pdp-desc">{e.description}</div>}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="pdp-section">
+        {otherEvents.length > 0 && (
+          <>
+            <h3>Other Events</h3>
+            {otherEvents.map((e) => (
+              <button key={e.handle} className="pdp-event pdp-event-row" onClick={() => setSelectedEventHandle(e.handle)}>
+                <span className="pdp-event-label"><strong>{e.typeString}</strong>{e.date && <span> &mdash; {e.date}</span>}</span>
+                <span className="pdp-event-arrow">›</span>
+                {e.place && <div className="pdp-place">{e.place}</div>}
+                {e.description && <div className="pdp-desc">{e.description}</div>}
+              </button>
+            ))}
+          </>
+        )}
+
+        {addingEvent !== null ? (
+          <div className="pdp-add-event-form">
+            <h3>New Event</h3>
+            <label className="pdp-edit-field">
+              <span>Type</span>
+              <select
+                value={addingEvent.typeValue}
+                onChange={(e) => setAddingEvent((prev) => prev ? { ...prev, typeValue: Number(e.target.value) } : prev)}
+              >
+                {EVENT_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            {addingEvent.typeValue === 0 && (
+              <label className="pdp-edit-field">
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={addingEvent.customString}
+                  onChange={(e) => setAddingEvent((prev) => prev ? { ...prev, customString: e.target.value } : prev)}
+                  placeholder="e.g. Military Draft Registration"
+                />
+              </label>
+            )}
+            <label className="pdp-edit-field">
+              <span>Date</span>
+              <input
+                type="text"
+                value={addingEvent.date}
+                onChange={(e) => setAddingEvent((prev) => prev ? { ...prev, date: e.target.value } : prev)}
+                placeholder="DD-MM-YYYY"
+              />
+            </label>
+            <label className="pdp-edit-field">
+              <span>Place</span>
+              <input
+                type="text"
+                value={addingEvent.place}
+                onChange={(e) => setAddingEvent((prev) => prev ? { ...prev, place: e.target.value } : prev)}
+              />
+            </label>
+            <div className="pdp-edit-actions">
+              <button
+                className="pdp-btn-save"
+                onClick={() => {
+                  if (!addingEvent || !person) return;
+                  const eventHandle = generateHandle();
+                  const dateval = parseDateString(addingEvent.date);
+                  const sortval = dateval[2] * 10000 + dateval[1] * 100 + dateval[0];
+                  const newEvents = new Map(data.events);
+                  const newPlaces = new Map(data.places);
+                  let placeHandle = "";
+                  const trimmedPlace = addingEvent.place.trim();
+                  if (trimmedPlace) {
+                    placeHandle = findPlaceByTitle(data, trimmedPlace) || "";
+                    if (!placeHandle) {
+                      placeHandle = generateHandle();
+                      newPlaces.set(placeHandle, { _class: "Place", handle: placeHandle, gramps_id: "", title: trimmedPlace, name: { value: trimmedPlace } });
+                    }
+                  }
+                  newEvents.set(eventHandle, {
+                    _class: "Event",
+                    handle: eventHandle,
+                    gramps_id: "",
+                    type: { value: addingEvent.typeValue, string: addingEvent.typeValue === 0 ? addingEvent.customString : "" },
+                    date: { dateval, text: "", sortval },
+                    place: placeHandle,
+                    description: "",
+                  });
+                  const newPersons = new Map(data.persons);
+                  newPersons.set(person.handle, {
+                    ...person,
+                    event_ref_list: [...person.event_ref_list, { ref: eventHandle, role: { value: 1 } }],
+                  });
+                  onDataChanged({ ...data, events: newEvents, places: newPlaces, persons: newPersons });
+                  setAddingEvent(null);
+                  setSelectedEventHandle(eventHandle);
+                }}
+              >
+                Save
+              </button>
+              <button className="pdp-btn-cancel" onClick={() => setAddingEvent(null)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="pdp-btn-add-alt"
+            style={{ marginTop: otherEvents.length > 0 ? "0.5rem" : 0 }}
+            onClick={() => setAddingEvent({ typeValue: 1, customString: "", date: "", place: "" })}
+          >
+            + Add event
+          </button>
+        )}
+      </div>
 
       {/* Parents */}
       {(fatherHandle || motherHandle) && (
