@@ -4,53 +4,53 @@ import { EVENT_BIRTH, EVENT_DEATH } from "../types/gramps";
 import { getPersonName } from "../utils/treeBuilder";
 import PersonSelect from "./PersonSelect";
 
-/** Gramps EventType numeric values → human-readable labels */
+/** Gramps EventType numeric values → human-readable labels (Gramps 5.x) */
 const EVENT_TYPE_LABELS: Record<number, string> = {
   1: "Marriage",
   2: "Marriage Settlement",
   3: "Marriage License",
   4: "Marriage Contract",
-  5: "Death",
-  6: "Divorce",
-  7: "Divorce Filing",
-  8: "Annulment",
-  9: "Alternate Marriage",
-  10: "Engagement",
-  11: "Marriage Banns",
+  5: "Marriage Banns",
+  6: "Engagement",
+  7: "Divorce",
+  8: "Divorce Filing",
+  9: "Annulment",
+  10: "Alternate Marriage",
+  11: "Adoption",
   12: "Birth",
-  13: "Burial",
-  14: "Cremation",
+  13: "Death",
+  14: "Adult Christening",
   15: "Baptism",
-  16: "Christening",
-  17: "Confirmation",
-  18: "First Communion",
-  19: "Cause Of Death",
-  20: "Emigration",
-  21: "Immigration",
-  22: "Census",
-  23: "Ordination",
-  24: "Probate",
-  25: "Will",
-  26: "Graduation",
-  27: "Retirement",
-  28: "Adoption",
-  29: "Naturalization",
-  30: "Degree",
-  31: "Education",
-  32: "Elected",
+  16: "Bar Mitzvah",
+  17: "Bat Mitzvah",
+  18: "Blessing",
+  19: "Burial",
+  20: "Cause of Death",
+  21: "Census",
+  22: "Christening",
+  23: "Confirmation",
+  24: "Cremation",
+  25: "Degree",
+  26: "Education",
+  27: "Elected",
+  28: "Emigration",
+  29: "First Communion",
+  30: "Immigration",
+  31: "Graduation",
+  32: "Military Service",
   33: "Medical Information",
-  34: "Military Service",
+  34: "Naturalization",
   35: "Nobility Title",
   36: "Number of Marriages",
   37: "Occupation",
-  38: "Property",
-  39: "Religion",
-  40: "Residence",
-  41: "Adult Christening",
-  42: "Bar Mitzvah",
-  43: "Bat Mitzvah",
-  44: "Blessing",
-  45: "Stillbirth",
+  38: "Ordination",
+  39: "Probate",
+  40: "Property",
+  41: "Religion",
+  42: "Residence",
+  43: "Retirement",
+  44: "Stillbirth",
+  45: "Will",
 };
 
 /** Gramps NameType values */
@@ -125,11 +125,13 @@ function nameTypeLabel(name: GrampsName): string {
 }
 
 interface ResolvedEvent {
+  handle: string;
   typeString: string;
   typeValue: number;
   date: string;
   place: string;
   description: string;
+  familyHandle?: string;
 }
 
 function resolveEvents(person: GrampsPerson, data: GrampsData): ResolvedEvent[] {
@@ -141,6 +143,7 @@ function resolveEvents(person: GrampsPerson, data: GrampsData): ResolvedEvent[] 
     seen.add(ref.ref);
     const place = event.place ? data.places.get(event.place)?.title || "" : "";
     events.push({
+      handle: ref.ref,
       typeString: event.type.string || EVENT_TYPE_LABELS[event.type.value] || `Event #${event.type.value}`,
       typeValue: event.type.value,
       date: formatDate(event.date),
@@ -159,11 +162,13 @@ function resolveEvents(person: GrampsPerson, data: GrampsData): ResolvedEvent[] 
       seen.add(ref.ref);
       const place = event.place ? data.places.get(event.place)?.title || "" : "";
       events.push({
+        handle: ref.ref,
         typeString: event.type.string || EVENT_TYPE_LABELS[event.type.value] || `Event #${event.type.value}`,
         typeValue: event.type.value,
         date: formatDate(event.date),
         place,
         description: event.description,
+        familyHandle,
       });
     }
   }
@@ -365,6 +370,8 @@ export default function PersonDetailPanel({
 }: PersonDetailPanelProps) {
   const [editing, setEditing] = useState(!!createMode);
   const [editForm, setEditForm] = useState<EditFormState | null>(createMode ? buildEmptyEditState() : null);
+  const [selectedEventHandle, setSelectedEventHandle] = useState<string | null>(null);
+  const [editingEventFields, setEditingEventFields] = useState<{ date: string; place: string } | null>(null);
   const firstNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -372,6 +379,11 @@ export default function PersonDetailPanel({
       firstNameRef.current.focus();
     }
   }, [editing]);
+
+  useEffect(() => {
+    setSelectedEventHandle(null);
+    setEditingEventFields(null);
+  }, [handle]);
 
   if (!createMode && !isVisible(handle, data, includePrivate)) return null;
   const person = createMode ? null : data.persons.get(handle)!;
@@ -1066,6 +1078,136 @@ export default function PersonDetailPanel({
     );
   }
 
+  // ── Event detail view ──
+  const selectedEvent = selectedEventHandle ? allEvents.find((e) => e.handle === selectedEventHandle) : null;
+  if (person && selectedEvent) {
+    const associated: Array<{ label: string; personHandle: string }> = [
+      { label: "Person", personHandle: handle },
+    ];
+    if (selectedEvent.typeValue === EVENT_BIRTH && person.parent_family_list.length > 0) {
+      const pf = data.families.get(person.parent_family_list[0]);
+      if (pf?.father_handle && isVisible(pf.father_handle, data, includePrivate))
+        associated.push({ label: "Father", personHandle: pf.father_handle });
+      if (pf?.mother_handle && isVisible(pf.mother_handle, data, includePrivate))
+        associated.push({ label: "Mother", personHandle: pf.mother_handle });
+    }
+    if (selectedEvent.familyHandle) {
+      const fam = data.families.get(selectedEvent.familyHandle);
+      if (fam) {
+        const spouseH = fam.father_handle === handle ? fam.mother_handle : fam.father_handle;
+        if (spouseH && isVisible(spouseH, data, includePrivate))
+          associated.push({ label: "Spouse", personHandle: spouseH });
+      }
+    }
+
+    const saveEventEdits = () => {
+      if (!editingEventFields) return;
+      const event = data.events.get(selectedEvent.handle);
+      if (!event) return;
+      const newEvents = new Map(data.events);
+      const newPlaces = new Map(data.places);
+      const dateval = parseDateString(editingEventFields.date);
+      const sortval = dateval[2] * 10000 + dateval[1] * 100 + dateval[0];
+      let placeHandle = "";
+      const trimmedPlace = editingEventFields.place.trim();
+      if (trimmedPlace) {
+        placeHandle = findPlaceByTitle(data, trimmedPlace) || "";
+        if (!placeHandle) {
+          for (const [, p] of newPlaces) {
+            if (p.title === trimmedPlace) { placeHandle = p.handle; break; }
+          }
+        }
+        if (!placeHandle) {
+          placeHandle = generateHandle();
+          newPlaces.set(placeHandle, { _class: "Place", handle: placeHandle, gramps_id: "", title: trimmedPlace, name: { value: trimmedPlace } });
+        }
+      }
+      newEvents.set(selectedEvent.handle, { ...event, date: { dateval, text: "", sortval }, place: placeHandle });
+      onDataChanged({ ...data, events: newEvents, places: newPlaces });
+      setEditingEventFields(null);
+    };
+
+    return (
+      <div className="person-detail-panel">
+        <div className="pdp-header">
+          <button
+            className="pdp-close pdp-back"
+            onClick={() => { setSelectedEventHandle(null); setEditingEventFields(null); }}
+            title="Back to person"
+          >
+            &#8592;
+          </button>
+          <div className="pdp-name">{selectedEvent.typeString}</div>
+          <div className="pdp-header-actions">
+            {editingEventFields === null && (
+              <button
+                className="pdp-edit-btn"
+                onClick={() => setEditingEventFields({ date: selectedEvent.date, place: selectedEvent.place })}
+                title="Edit event"
+              >
+                &#x270E;
+              </button>
+            )}
+          </div>
+        </div>
+
+        {editingEventFields !== null ? (
+          <div className="pdp-edit-form">
+            <div className="pdp-edit-section">
+              <label className="pdp-edit-field">
+                <span>Date</span>
+                <input
+                  type="text"
+                  value={editingEventFields.date}
+                  onChange={(e) => setEditingEventFields((prev) => prev ? { ...prev, date: e.target.value } : prev)}
+                  placeholder="DD-MM-YYYY"
+                  autoFocus
+                />
+              </label>
+              <label className="pdp-edit-field">
+                <span>Place</span>
+                <input
+                  type="text"
+                  value={editingEventFields.place}
+                  onChange={(e) => setEditingEventFields((prev) => prev ? { ...prev, place: e.target.value } : prev)}
+                />
+              </label>
+            </div>
+            <div className="pdp-edit-actions">
+              <button className="pdp-btn-save" onClick={saveEventEdits}>Save</button>
+              <button className="pdp-btn-cancel" onClick={() => setEditingEventFields(null)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div className="pdp-section">
+            {selectedEvent.date
+              ? <div className="pdp-event"><strong>Date</strong><span> &mdash; {selectedEvent.date}</span></div>
+              : <div className="pdp-event pdp-muted">No date recorded</div>
+            }
+            {selectedEvent.place && (
+              <div className="pdp-event"><strong>Place</strong><div className="pdp-place">{selectedEvent.place}</div></div>
+            )}
+            {selectedEvent.description && (
+              <div className="pdp-event"><strong>Description</strong><div className="pdp-desc">{selectedEvent.description}</div></div>
+            )}
+          </div>
+        )}
+
+        {editingEventFields === null && associated.length > 0 && (
+          <div className="pdp-section">
+            <h3>Individuals</h3>
+            {associated.map(({ label, personHandle: ph }) => (
+              <div key={ph}>
+                {label}:{" "}
+                <PersonLink handle={ph} data={data} includePrivate={includePrivate} onNavigate={(h) => { setSelectedEventHandle(null); onNavigate(h); }} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ── View mode ──
   if (!person) return null;
   return (
@@ -1109,20 +1251,20 @@ export default function PersonDetailPanel({
       <div className="pdp-section">
         <h3>Vital Events</h3>
         {birthEvent ? (
-          <div className="pdp-event">
-            <strong>Birth</strong>
-            {birthEvent.date && <span> &mdash; {birthEvent.date}</span>}
+          <button className="pdp-event pdp-event-row" onClick={() => setSelectedEventHandle(birthEvent.handle)}>
+            <span className="pdp-event-label"><strong>Birth</strong>{birthEvent.date && <span> &mdash; {birthEvent.date}</span>}</span>
+            <span className="pdp-event-arrow">›</span>
             {birthEvent.place && <div className="pdp-place">{birthEvent.place}</div>}
-          </div>
+          </button>
         ) : (
           <div className="pdp-event pdp-muted">No birth record</div>
         )}
         {deathEvent ? (
-          <div className="pdp-event">
-            <strong>Death</strong>
-            {deathEvent.date && <span> &mdash; {deathEvent.date}</span>}
+          <button className="pdp-event pdp-event-row" onClick={() => setSelectedEventHandle(deathEvent.handle)}>
+            <span className="pdp-event-label"><strong>Death</strong>{deathEvent.date && <span> &mdash; {deathEvent.date}</span>}</span>
+            <span className="pdp-event-arrow">›</span>
             {deathEvent.place && <div className="pdp-place">{deathEvent.place}</div>}
-          </div>
+          </button>
         ) : (
           <div className="pdp-event pdp-muted">No death record</div>
         )}
@@ -1132,13 +1274,13 @@ export default function PersonDetailPanel({
       {otherEvents.length > 0 && (
         <div className="pdp-section">
           <h3>Other Events</h3>
-          {otherEvents.map((e, i) => (
-            <div key={i} className="pdp-event">
-              <strong>{e.typeString}</strong>
-              {e.date && <span> &mdash; {e.date}</span>}
+          {otherEvents.map((e) => (
+            <button key={e.handle} className="pdp-event pdp-event-row" onClick={() => setSelectedEventHandle(e.handle)}>
+              <span className="pdp-event-label"><strong>{e.typeString}</strong>{e.date && <span> &mdash; {e.date}</span>}</span>
+              <span className="pdp-event-arrow">›</span>
               {e.place && <div className="pdp-place">{e.place}</div>}
               {e.description && <div className="pdp-desc">{e.description}</div>}
-            </div>
+            </button>
           ))}
         </div>
       )}

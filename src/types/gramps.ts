@@ -84,5 +84,5 @@ export interface GrampsData {
 
 // Gramps EventType values
 export const EVENT_BIRTH = 12;
-export const EVENT_DEATH = 5;
+export const EVENT_DEATH = 13;
 export const EVENT_MARRIAGE = 1;
